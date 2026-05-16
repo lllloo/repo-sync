@@ -14,10 +14,10 @@
 - **THEN** 工具顯示「找不到任何 git repo」並結束
 
 ### Requirement: 並行執行 git pull
-工具 SHALL 對所有偵測到的 git repo 並行執行 `git pull`。
+工具 SHALL 在使用者確認後，只對落後 remote 的 repo 並行執行 `git pull`。
 
-#### Scenario: 所有 repo pull 成功
-- **WHEN** 所有 git repo 均可正常 pull
+#### Scenario: 所有落後 repo pull 成功
+- **WHEN** 使用者確認且所有落後 repo 均可正常 pull
 - **THEN** 每個 repo 顯示成功狀態，工具以 exit code 0 結束
 
 #### Scenario: 部分 repo pull 失敗
