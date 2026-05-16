@@ -43,22 +43,6 @@ PULL_ALL_INCLUDE=web,common,note
 PULL_ALL_INCLUDE=web,common node index.js
 ```
 
-### 從舊設定遷移
-
-舊版 `pull-all.config.json`：
-
-```json
-{
-  "include": ["web", "common", "note"]
-}
-```
-
-改成 `.env`：
-
-```env
-PULL_ALL_INCLUDE=web,common,note
-```
-
 ## 輸出範例
 
 ```
