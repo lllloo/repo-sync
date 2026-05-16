@@ -23,15 +23,40 @@ function isGitRepo(dir) {
   return fs.existsSync(path.join(dir, '.git'));
 }
 
-function loadConfig() {
-  const configPath = path.join(__dirname, 'pull-all.config.json');
-  if (!fs.existsSync(configPath)) return null;
-  try {
-    return JSON.parse(fs.readFileSync(configPath, 'utf8'));
-  } catch {
-    console.error(`${YELLOW}⚠ 無法解析 pull-all.config.json${RESET}`);
-    return null;
+function loadEnvFile() {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) return {};
+
+  const env = {};
+  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const equalsIndex = trimmed.indexOf('=');
+    if (equalsIndex === -1) continue;
+
+    const key = trimmed.slice(0, equalsIndex).trim();
+    const value = trimmed.slice(equalsIndex + 1).trim();
+    if (key) env[key] = value;
   }
+
+  return env;
+}
+
+function parseIncludeList(value) {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map(name => name.trim())
+    .filter(Boolean);
+}
+
+function loadIncludeList() {
+  const fileEnv = loadEnvFile();
+  const includeValue = process.env.PULL_ALL_INCLUDE || fileEnv.PULL_ALL_INCLUDE;
+  return parseIncludeList(includeValue);
 }
 
 async function fetchRepo(dir) {
@@ -75,11 +100,11 @@ async function main() {
     .filter(e => e.isDirectory())
     .map(e => e.name);
 
-  const config = loadConfig();
+  const include = loadIncludeList();
   let targets = [];
 
-  if (config && Array.isArray(config.include)) {
-    for (const name of config.include) {
+  if (include.length > 0) {
+    for (const name of include) {
       const fullPath = path.join(parentDir, name);
       if (!fs.existsSync(fullPath)) {
         console.log(`${YELLOW}⚠ 找不到 ${name}${RESET}`);

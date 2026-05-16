@@ -1,7 +1,0 @@
-{
-  "include": [
-    "sync-ai",
-    "obsidian-memory",
-    "bmad-project"
-  ]
-}
