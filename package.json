@@ -7,7 +7,8 @@
     "pull-all": "./index.js"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "init": "node index.js init"
   },
   "license": "MIT"
 }

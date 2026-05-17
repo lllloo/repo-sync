@@ -10,6 +10,8 @@ const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
 const YELLOW = '\x1b[33m';
 const GRAY = '\x1b[90m';
+const BOLD = '\x1b[1m';
+const INVERT = '\x1b[7m';
 
 function sh(cmd, dir) {
   return new Promise((resolve) => {
@@ -77,6 +79,67 @@ function ask(question) {
     rl.question(question, (ans) => {
       rl.close();
       resolve(ans.trim());
+    });
+  });
+}
+
+function checkbox(items, preselected = []) {
+  return new Promise((resolve, reject) => {
+    if (!process.stdin.isTTY) {
+      console.error(`${RED}init 需要互動式終端${RESET}`);
+      process.exit(1);
+    }
+
+    const selected = new Set(preselected);
+    let cursor = 0;
+
+    function render() {
+      const lines = items.map((item, i) => {
+        const check = selected.has(item) ? 'x' : ' ';
+        const line = `  [${check}] ${item}`;
+        return i === cursor ? `${INVERT}${line}${RESET}` : line;
+      });
+      process.stdout.write(lines.join('\n'));
+    }
+
+    function redraw() {
+      process.stdout.write(`\x1b[${items.length - 1}A\r`);
+      render();
+    }
+
+    process.stdout.write(`選擇要追蹤的 repo（${BOLD}↑↓${RESET} 移動，${BOLD}Space${RESET} 切換，${BOLD}Enter${RESET} 確認）：\n\n`);
+    render();
+
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    process.stdin.on('data', function onData(key) {
+      if (key === '\x03') {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener('data', onData);
+        process.stdout.write('\n');
+        console.log('已取消。');
+        process.exit(0);
+      } else if (key === '\x1b[A') {
+        cursor = (cursor - 1 + items.length) % items.length;
+        redraw();
+      } else if (key === '\x1b[B') {
+        cursor = (cursor + 1) % items.length;
+        redraw();
+      } else if (key === '\x20') {
+        const item = items[cursor];
+        if (selected.has(item)) selected.delete(item);
+        else selected.add(item);
+        redraw();
+      } else if (key === '\r') {
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        process.stdin.removeListener('data', onData);
+        process.stdout.write('\n\n');
+        resolve([...selected]);
+      }
     });
   });
 }
@@ -175,4 +238,57 @@ async function main() {
   }
 }
 
-main();
+function updateEnvFile(envPath, key, value) {
+  let lines = [];
+  if (fs.existsSync(envPath)) {
+    lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+  }
+
+  const keyPrefix = `${key}=`;
+  const idx = lines.findIndex(l => l.startsWith(keyPrefix));
+  const newLine = `${key}=${value}`;
+
+  if (idx !== -1) {
+    lines[idx] = newLine;
+  } else {
+    if (lines.length > 0 && lines[lines.length - 1] === '') {
+      lines[lines.length - 1] = newLine;
+      lines.push('');
+    } else {
+      lines.push(newLine);
+    }
+  }
+
+  fs.writeFileSync(envPath, lines.join('\n'));
+}
+
+async function runInit() {
+  const parentDir = path.resolve(__dirname, '..');
+  const repos = fs.readdirSync(parentDir, { withFileTypes: true })
+    .filter(e => e.isDirectory() && isGitRepo(path.join(parentDir, e.name)))
+    .map(e => e.name)
+    .sort();
+
+  if (repos.length === 0) {
+    console.log('找不到任何 git repo。');
+    return;
+  }
+
+  const envPath = path.join(__dirname, '.env');
+  const fileEnv = loadEnvFile();
+  const currentInclude = parseIncludeList(process.env.PULL_ALL_INCLUDE || fileEnv.PULL_ALL_INCLUDE);
+  const preselected = currentInclude.filter(name => repos.includes(name));
+
+  const chosen = await checkbox(repos, preselected);
+
+  const value = chosen.join(',');
+  updateEnvFile(envPath, 'PULL_ALL_INCLUDE', value);
+
+  const display = chosen.length > 0 ? chosen.join(', ') : '（全部）';
+  console.log(`${GREEN}✓ 已寫入 ${envPath}${RESET}`);
+  console.log(`  PULL_ALL_INCLUDE=${display}`);
+}
+
+const cmd = process.argv[2];
+if (cmd === 'init') runInit();
+else main();

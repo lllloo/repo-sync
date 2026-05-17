@@ -15,6 +15,7 @@
 - 一次檢查兄弟層所有 git repo
 - 執行 `git fetch` 後先顯示狀態，不會直接 pull
 - 只針對 behind 的 repo 詢問是否更新
+- `init` 指令：互動式勾選 repo，自動寫入 `.env`
 - 可用 `.env` 指定要同步的 repo 清單
 - 無 npm dependencies，只需要 Node.js 與 git
 
@@ -65,13 +66,29 @@ pull-all
 
 ## 設定
 
-同步清單屬於本機設定，請放在 `.env`，不要提交到 git。
+### 快速初始化（建議）
+
+執行 `init` 指令，互動式勾選要追蹤的 repo，自動寫入 `.env`：
 
 ```bash
-cp .env.example .env
+node index.js init
+# 或
+npm run init
 ```
 
-編輯 `.env`：
+```text
+選擇要追蹤的 repo（↑↓ 移動，Space 切換，Enter 確認）：
+
+  [x] web
+  [x] common
+  [ ] old-project
+```
+
+若 `.env` 已存在，會自動預選現有清單，方便修改。
+
+### 手動設定
+
+同步清單屬於本機設定，請放在 `.env`，不要提交到 git。
 
 ```env
 PULL_ALL_INCLUDE=web,common,note
@@ -115,13 +132,15 @@ PULL_ALL_INCLUDE=web,common node index.js
 ## 常用指令
 
 ```bash
-# 直接執行
-node index.js
+# 初始化 .env（互動式勾選）
+node index.js init
+npm run init
 
-# 使用 npm script
+# 執行同步
+node index.js
 npm start
 
-# 只同步指定 repo
+# 只同步指定 repo（臨時覆蓋）
 PULL_ALL_INCLUDE=web,common node index.js
 ```
 
