@@ -16,8 +16,9 @@
 - 執行 `git fetch` 後先顯示狀態，不會直接 pull
 - 只針對 behind 的 repo 詢問是否更新
 - `init` 指令：互動式勾選 repo，自動寫入 `.env`
+- `clone` 指令：自動 clone `.env` 列了但本機沒有的 repo（透過 `gh` CLI）
 - 可用 `.env` 指定要同步的 repo 清單
-- 無 npm dependencies，只需要 Node.js 與 git
+- 無 npm dependencies，只需要 Node.js 與 git（`clone` 子命令另需 `gh`）
 
 ## 安裝
 
@@ -116,8 +117,9 @@ PULL_ALL_INCLUDE=web,common,note
 | --- | --- |
 | 有 `PULL_ALL_INCLUDE` | 只檢查清單內的 repo |
 | 無 `.env` 或 `PULL_ALL_INCLUDE` 為空 | 檢查父目錄下所有 git repo |
-| 清單內 repo 不存在 | 顯示警告，其他 repo 照常執行 |
+| 清單內 repo 不存在 | 顯示警告，其他 repo 照常執行（用 `pull-all clone` 補回） |
 | 清單內目錄不是 git repo | 跳過該目錄 |
+| `PULL_ALL_OWNER` | `pull-all clone` 使用的 GitHub owner（個人或 org 帳號），未設定時 `clone` 會報錯 |
 
 也可以臨時用 shell 環境變數覆蓋 `.env`：
 
@@ -148,12 +150,49 @@ root: /Users/barney/code
 ✓ common
 ```
 
+## 補回缺漏 repo（`pull-all clone`）
+
+`.env` 列了但本機沒有的 repo，可用 `pull-all clone` 自動補回。URL 解析、認證、protocol 全部交給 `gh` CLI 處理。
+
+前置條件：
+
+- 已安裝 [gh CLI](https://cli.github.com/)
+- 已執行 `gh auth login`
+- `.env` 設定 `PULL_ALL_OWNER`（GitHub 個人或 org 帳號）
+
+```env
+PULL_ALL_INCLUDE=web,common,note
+PULL_ALL_OWNER=barney
+```
+
+```bash
+node index.js clone
+# 或
+pull-all clone
+```
+
+流程：
+
+1. 檢查 `gh` 已安裝且已登入，任一失敗即報錯結束。
+2. 讀 `PULL_ALL_OWNER` 與 `PULL_ALL_INCLUDE`。
+3. 比對掃描根目錄，對本機不存在的名字並行執行 `gh repo clone <OWNER>/<name>`。
+4. 已存在但不是 git repo 的目錄會跳過警告，不覆蓋既有檔案。
+
+限制：
+
+- 目前僅支援單一 owner，名字含 `/` 會直接報錯。
+- 只支援 GitHub。GitLab、Bitbucket、自架 Gitea 不在範圍。
+- 主 `pull-all` 與 `pull-all init` 不受影響，不需要 `gh`。
+
 ## 常用指令
 
 ```bash
 # 初始化 .env（互動式勾選）
 node index.js init
 npm run init
+
+# 補回 .env 列了但本機沒有的 repo
+node index.js clone
 
 # 執行同步
 node index.js

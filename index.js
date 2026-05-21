@@ -149,6 +149,37 @@ function checkbox(items, preselected = []) {
   });
 }
 
+function loadOwner() {
+  const fileEnv = loadEnvFile();
+  const raw = process.env.PULL_ALL_OWNER || fileEnv.PULL_ALL_OWNER || '';
+  const owner = raw.trim();
+  return owner || null;
+}
+
+async function checkGhAvailable() {
+  const { err } = await sh('gh --version');
+  if (err) {
+    console.error(`${RED}找不到 gh CLI。請先安裝：https://cli.github.com/${RESET}`);
+    return false;
+  }
+  return true;
+}
+
+async function checkGhAuth() {
+  const { err, stderr } = await sh('gh auth status');
+  if (err) {
+    console.error(`${RED}gh 尚未登入，請執行：gh auth login${RESET}`);
+    if (stderr) console.error(`${GRAY}${stderr}${RESET}`);
+    return false;
+  }
+  return true;
+}
+
+async function cloneRepo(owner, name, rootDir) {
+  const { err, stderr } = await sh(`gh repo clone ${owner}/${name}`, rootDir);
+  return { name, ok: !err, stderr };
+}
+
 async function checkAndPull(target) {
   const { name, fullPath } = target;
   const fetch = await fetchRepo(fullPath);
@@ -298,6 +329,70 @@ async function runInit() {
   console.log(`  PULL_ALL_INCLUDE=${display}`);
 }
 
+async function runClone() {
+  const rootDir = resolveRoot();
+  console.log(`${GRAY}root: ${rootDir}${RESET}`);
+
+  const ghReady = (await checkGhAvailable()) && (await checkGhAuth());
+  if (!ghReady) process.exit(1);
+
+  const owner = loadOwner();
+  if (!owner) {
+    console.error(`${RED}未設定 PULL_ALL_OWNER。請在 .env 加上 PULL_ALL_OWNER=<github-owner>${RESET}`);
+    process.exit(1);
+  }
+
+  const include = loadIncludeList();
+  if (include.length === 0) {
+    console.log('.env 未設定 PULL_ALL_INCLUDE，無 repo 可 clone。');
+    return;
+  }
+
+  const invalid = include.filter(name => name.includes('/'));
+  if (invalid.length > 0) {
+    console.error(`${RED}目前僅支援單一 owner，名字不可含 /：${invalid.join(', ')}${RESET}`);
+    process.exit(1);
+  }
+
+  const toClone = [];
+  const skipped = [];
+  for (const name of include) {
+    const fullPath = path.join(rootDir, name);
+    if (fs.existsSync(fullPath)) {
+      if (!isGitRepo(fullPath)) {
+        skipped.push(name);
+      }
+      continue;
+    }
+    toClone.push(name);
+  }
+
+  for (const name of skipped) {
+    console.log(`${YELLOW}⚠ ${name} 已存在但不是 git repo，跳過${RESET}`);
+  }
+
+  if (toClone.length === 0) {
+    console.log(`${GREEN}所有 repo 都已存在。${RESET}`);
+    return;
+  }
+
+  console.log(`正在 clone ${toClone.length} 個 repo...\n`);
+
+  const results = await Promise.all(toClone.map(name => cloneRepo(owner, name, rootDir)));
+
+  for (const { name, ok, stderr } of results) {
+    if (ok) {
+      console.log(`${GREEN}✓ ${name}${RESET}`);
+    } else {
+      console.log(`${RED}✗ ${name}${RESET}`);
+      if (stderr) console.log(`  ${stderr}`);
+    }
+  }
+
+  if (results.some(r => !r.ok)) process.exit(1);
+}
+
 const cmd = process.argv[2];
 if (cmd === 'init') runInit();
+else if (cmd === 'clone') runClone();
 else main();
