@@ -83,11 +83,11 @@ PULL_ALL_ROOT=/srv/projects pull-all
 
 ## 設定
 
-`.env` 寫在**掃描根目錄**（cwd 父目錄或 `PULL_ALL_ROOT`），不寫在 `pull-all/` 內。
+`.env` 寫在 **pull-all repo 根目錄**（與 `.env.example` 同位置），與「掃描根目錄」解耦。不論在哪個 cwd 呼叫，工具都從同一處讀寫 `.env`。
 
 ### 快速初始化（建議）
 
-執行 `init` 指令，互動式勾選要追蹤的 repo，自動寫入掃描根目錄下的 `.env`：
+執行 `init` 指令，互動式勾選要追蹤的 repo，自動寫入 pull-all repo 根目錄下的 `.env`：
 
 ```bash
 node index.js init
@@ -204,13 +204,17 @@ PULL_ALL_INCLUDE=web,common node index.js
 
 ## 遷移指引
 
-舊版（`__dirname` 為基準）把 `.env` 寫在 `pull-all/` 內。新版改放在**掃描根目錄**（cwd 父目錄或 `PULL_ALL_ROOT`），請手動搬一次：
+中間有段時間（`resolve-paths-from-cwd` 之後）`.env` 預期放在「掃描根目錄」（cwd 父目錄或 `PULL_ALL_ROOT`）。現已**改回 pull-all repo 根目錄**，與 `.env.example` 位置一致。從 pull-all repo 內執行：
 
 ```bash
-mv ~/code/pull-all/.env ~/code/.env
+mv ../.env .env
 ```
 
-之後 `pull-all` 在 `~/code/` 底下任一 repo 內執行都能讀到。若先前是 `cd pull-all && node index.js` 的用法，行為不變（cwd 父目錄 = `~/code/`）。
+### 為何 revert
+
+- 當初把 `.env` 搬離 repo 的主要動機是「`npm link` 全域安裝後 `__dirname` 會指向 npm global lib」——查證為**誤判**。`npm link` 走 symlink，Node 預設 resolve symlink，`__dirname` 仍是 source repo。只有 `npm install -g`（從 registry 真實複製檔案）才會落到 global lib，本專案無 publish 計畫。
+- `.env.example` 留在 repo 內、`.env` 卻在外面，clone 後第一直覺就會踩到。位置一致才是主訴求。
+- `PULL_ALL_ROOT` 與 `.env` 位置現在完全解耦：仍可設 `PULL_ALL_ROOT=/some/path` 掃別處，但 `.env` 永遠跟著工具走。
 
 ## 授權
 

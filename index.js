@@ -31,7 +31,7 @@ function resolveRoot() {
 }
 
 function loadEnvFile() {
-  const envPath = path.join(resolveRoot(), '.env');
+  const envPath = path.join(__dirname, '.env');
   if (!fs.existsSync(envPath)) return {};
 
   const env = {};
@@ -314,7 +314,7 @@ async function runInit() {
     return;
   }
 
-  const envPath = path.join(parentDir, '.env');
+  const envPath = path.join(__dirname, '.env');
   const fileEnv = loadEnvFile();
   const currentInclude = parseIncludeList(process.env.PULL_ALL_INCLUDE || fileEnv.PULL_ALL_INCLUDE);
   const preselected = currentInclude.filter(name => repos.includes(name));

@@ -20,9 +20,9 @@ metadata:
 
 ## 1. 讀取設定
 
-讀 `<root>/.env`，取得 `PULL_ALL_INCLUDE`（逗號分隔的 repo 名稱清單）。
+讀 pull-all repo 根目錄下的 `.env`（與 `.env.example` 同位置；以 pull-all 工具自身的 `__dirname` 為錨，與 `<root>` 解耦），取得 `PULL_ALL_INCLUDE`（逗號分隔的 repo 名稱清單）。
 
-若 .env 不存在或 `PULL_ALL_INCLUDE` 為空，掃描 `<root>/` 底下所有含 `.git/` 的目錄。
+若 `.env` 不存在或 `PULL_ALL_INCLUDE` 為空，掃描 `<root>/` 底下所有含 `.git/` 的目錄。
 
 ## 2. Fetch（並行）
 
