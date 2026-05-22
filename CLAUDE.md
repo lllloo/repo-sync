@@ -11,11 +11,13 @@ npm start              # 同上
 node index.js init     # 互動式勾選 repo，寫入 .env
 npm run init           # 同上
 
-node index.js clone    # clone .env 列了但本機沒有的 repo
+node index.js clone    # clone .env 列了但本機沒有的 repo（需要 gh CLI + gh auth login）
 node index.js help     # 顯示說明
+
+npm link               # 安裝全域 pull-all 指令
 ```
 
-無 build 步驟、無測試套件、無 npm 相依套件。
+無 build 步驟、無測試套件、無 npm 相依套件。`clone` 子命令額外需要 [gh CLI](https://cli.github.com/)。
 
 ## 架構概覽
 
