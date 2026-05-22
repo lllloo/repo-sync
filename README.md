@@ -222,6 +222,9 @@ npm run init
 # 補回 .env 列了但本機沒有的 repo
 node index.js clone
 
+# 顯示用法
+node index.js --help
+
 # 執行同步
 node index.js
 npm start

@@ -2,9 +2,7 @@
 
 ## Purpose
 提供 `pull-all clone` 子命令，把 `.env` 的 `PULL_ALL_INCLUDE` 列了但本機不存在的 repo，透過 `gh` CLI 自動 clone 下來，補完整個工作區同步閉環。URL 解析與認證交由 `gh` 處理，本機只維護單一 GitHub `owner` 設定。
-
 ## Requirements
-
 ### Requirement: clone subcommand 路由
 執行 `pull-all clone` 時，系統 SHALL 進入 clone 流程而非主要 pull 流程或 init 流程。
 
@@ -32,10 +30,10 @@
 - **THEN** 系統繼續執行後續流程
 
 ### Requirement: 解析 PULL_ALL_OWNER 設定
-系統 SHALL 從 `PULL_ALL_OWNER` 環境變數或掃描根目錄下的 `.env` 讀取 GitHub owner，未設定 MUST 以非 0 exit code 結束並印出指引。
+系統 SHALL 從 `PULL_ALL_OWNER` 環境變數或 pull-all repo 根目錄下的 `.env` 讀取 GitHub owner，未設定 MUST 以非 0 exit code 結束並印出指引。`.env` 位置 MUST 與 `PULL_ALL_INCLUDE` 使用相同規則：以 pull-all 工具 repo 根目錄為錨點，不跟隨掃描根目錄或 cwd。
 
 #### Scenario: 從 .env 讀取
-- **WHEN** 掃描根目錄下 `.env` 含 `PULL_ALL_OWNER=barney` 且環境變數未覆寫
+- **WHEN** pull-all repo 根目錄下 `.env` 含 `PULL_ALL_OWNER=barney` 且環境變數未覆寫
 - **THEN** 系統使用 `barney` 作為 owner
 
 #### Scenario: 環境變數覆寫 .env
@@ -43,7 +41,7 @@
 - **THEN** 系統使用 `process.env.PULL_ALL_OWNER` 的值（與 `PULL_ALL_INCLUDE` 的優先序一致）
 
 #### Scenario: 未設定 owner
-- **WHEN** `.env` 與 `process.env` 皆未設定 `PULL_ALL_OWNER`
+- **WHEN** pull-all repo 根目錄下 `.env` 與 `process.env` 皆未設定 `PULL_ALL_OWNER`
 - **THEN** 印出錯誤訊息指引設定 `PULL_ALL_OWNER`，以非 0 exit code 結束
 
 #### Scenario: owner 為空字串
@@ -115,12 +113,13 @@
 - **THEN** 顯示黃色警告 `⚠ <name> 已存在但不是 git repo，跳過`
 
 ### Requirement: 沿用掃描根目錄解析
-系統 SHALL 沿用既有 `resolveRoot()` 規則解析掃描根目錄與 `.env` 位置，優先序為 `PULL_ALL_ROOT` 環境變數 → `process.cwd()` 父目錄。
+系統 SHALL 沿用既有 `resolveRoot()` 規則解析掃描根目錄，優先序為 `PULL_ALL_ROOT` 環境變數 → `process.cwd()` 父目錄。掃描根目錄 SHALL 用於比對本機 repo 與作為 `gh repo clone` 工作目錄；`.env` 位置 MUST 不由掃描根目錄決定。
 
 #### Scenario: 使用 PULL_ALL_ROOT
 - **WHEN** 環境變數 `PULL_ALL_ROOT=/srv/projects` 已設定
-- **THEN** 系統將 clone 工作目錄設為 `/srv/projects`，從 `/srv/projects/.env` 讀取設定
+- **THEN** 系統將 clone 工作目錄設為 `/srv/projects`，並仍從 pull-all repo 根目錄下 `.env` 讀取設定
 
 #### Scenario: 預設使用 cwd 父目錄
 - **WHEN** 未設定 `PULL_ALL_ROOT`，使用者在 `~/code/web/` 執行 `pull-all clone`
-- **THEN** 系統將 clone 工作目錄設為 `~/code/`，從 `~/code/.env` 讀取設定
+- **THEN** 系統將 clone 工作目錄設為 `~/code/`，並仍從 pull-all repo 根目錄下 `.env` 讀取設定
+

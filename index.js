@@ -591,7 +591,31 @@ async function runClone() {
   if (results.some(r => !r.ok)) process.exit(1);
 }
 
-const cmd = process.argv[2];
-if (cmd === 'init') runInit();
-else if (cmd === 'clone') runClone();
-else main();
+function printHelp(write = console.log) {
+  write(`Usage: pull-all [command]
+
+Commands:
+  pull-all          檢查兄弟層 git repo，必要時詢問是否 pull
+  pull-all init     互動式勾選 repo，寫入 .env
+  pull-all clone    clone .env 列了但本機沒有的 repo
+  pull-all help     顯示此說明
+
+Options:
+  -h, --help        顯示此說明`);
+}
+
+function dispatch(cmd) {
+  if (!cmd) return main();
+  if (cmd === 'init') return runInit();
+  if (cmd === 'clone') return runClone();
+  if (cmd === 'help' || cmd === '--help' || cmd === '-h') {
+    printHelp();
+    return undefined;
+  }
+
+  console.error(`${RED}未知指令：${cmd}${RESET}`);
+  printHelp(console.error);
+  process.exit(1);
+}
+
+dispatch(process.argv[2]);
