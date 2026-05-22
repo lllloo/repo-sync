@@ -25,62 +25,53 @@ function isGitRepo(dir) {
   return fs.existsSync(path.join(dir, '.git'));
 }
 
-function resolveRoot() {
-  if (process.env.PULL_ALL_ROOT) return path.resolve(process.env.PULL_ALL_ROOT);
-  return path.dirname(process.cwd());
-}
+const resolveRoot = () => path.dirname(__dirname);
 
-function loadEnvFile() {
+let _env = null;
+function loadEnv() {
+  if (_env) return _env;
+  _env = {};
   const envPath = path.join(__dirname, '.env');
-  if (!fs.existsSync(envPath)) return {};
-
-  const env = {};
-  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
-
-  for (const line of lines) {
+  if (!fs.existsSync(envPath)) return _env;
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
-
-    const equalsIndex = trimmed.indexOf('=');
-    if (equalsIndex === -1) continue;
-
-    const key = trimmed.slice(0, equalsIndex).trim();
-    const value = trimmed.slice(equalsIndex + 1).trim();
-    if (key) env[key] = value;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    if (key) _env[key] = trimmed.slice(eq + 1).trim();
   }
-
-  return env;
+  return _env;
 }
 
-function parseIncludeList(value) {
+const env = (k) => process.env[k] || loadEnv()[k] || null;
+
+function parseInclude(value) {
   if (!value) return [];
-  return value
-    .split(',')
-    .map(name => name.trim())
-    .filter(Boolean);
+  return value.split(',').map(s => s.trim()).filter(Boolean);
 }
 
-function loadIncludeList() {
-  const fileEnv = loadEnvFile();
-  const includeValue = process.env.PULL_ALL_INCLUDE || fileEnv.PULL_ALL_INCLUDE;
-  return parseIncludeList(includeValue);
-}
-
-async function fetchRepo(dir) {
-  const { err, stderr } = await sh('git fetch', dir);
-  return { ok: !err, stderr };
-}
-
-async function isEmptyRepo(dir) {
-  const { err } = await sh('git rev-parse --verify --quiet HEAD', dir);
-  return !!err;
-}
-
-async function getCurrentBranch(dir) {
-  const { err, stdout } = await sh('git symbolic-ref --short HEAD', dir);
-  if (!err && stdout) return { detached: false, name: stdout };
-  const { stdout: sha } = await sh('git rev-parse --short HEAD', dir);
-  return { detached: true, sha };
+function parseStatus(stdout) {
+  const lines = stdout.split('\n');
+  const hdr = {};
+  for (const line of lines) {
+    if (!line.startsWith('# ')) break;
+    const sp = line.indexOf(' ', 2);
+    const key = line.slice(2, sp);
+    hdr[key] = line.slice(sp + 1);
+  }
+  const headName = hdr['branch.head'];
+  const detached = headName === '(detached)';
+  const sha = (hdr['branch.oid'] || '').slice(0, 7);
+  const hasUpstream = 'branch.upstream' in hdr;
+  let ahead = 0, behind = 0;
+  const ab = hdr['branch.ab'];
+  if (ab) {
+    const m = ab.match(/\+(\d+) -(\d+)/);
+    if (m) { ahead = +m[1]; behind = +m[2]; }
+  }
+  const dirty = lines.some(l => /^[12u] /.test(l));
+  return { detached, name: detached ? null : headName, sha, hasUpstream, ahead, behind, dirty };
 }
 
 async function getDefaultBranch(dir) {
@@ -96,38 +87,62 @@ async function getDefaultBranch(dir) {
   return null;
 }
 
-async function getAhead(dir, branch) {
-  const { err, stdout } = await sh(`git rev-list ${branch} --not --remotes --count`, dir);
-  if (err) return 0;
-  const n = parseInt(stdout, 10);
-  return Number.isFinite(n) ? n : 0;
-}
-
-async function hasUpstream(dir, branch) {
-  const { err } = await sh(`git rev-parse --verify --quiet ${branch}@{u}`, dir);
-  return !err;
-}
-
-async function getBehind(dir, branch) {
-  if (!(await hasUpstream(dir, branch))) return null;
-  const { err, stdout } = await sh(`git rev-list ${branch}..${branch}@{u} --count`, dir);
-  if (err) return null;
-  const n = parseInt(stdout, 10);
-  return Number.isFinite(n) ? n : 0;
-}
-
 async function getBranchStatus(dir, branch) {
-  const upstream = await hasUpstream(dir, branch);
-  const ahead = await getAhead(dir, branch);
-  const behind = upstream ? (await getBehind(dir, branch)) ?? 0 : 0;
-  return { ahead, behind, hasUpstream: upstream };
+  const [aheadRes, upstreamRes] = await Promise.all([
+    sh(`git rev-list ${branch} --not --remotes --count`, dir),
+    sh(`git rev-parse --verify --quiet ${branch}@{u}`, dir),
+  ]);
+  const hasUpstream = !upstreamRes.err;
+  const ahead = parseInt(aheadRes.stdout, 10) || 0;
+  if (!hasUpstream) return { ahead, behind: 0, hasUpstream };
+  const { err, stdout } = await sh(`git rev-list ${branch}..${branch}@{u} --count`, dir);
+  const behind = err ? 0 : (parseInt(stdout, 10) || 0);
+  return { ahead, behind, hasUpstream };
 }
 
-async function isDirty(dir) {
-  const { err, stdout } = await sh('git status --porcelain', dir);
-  if (err || !stdout) return false;
-  const lines = stdout.split(/\r?\n/).filter(l => l && !l.startsWith('??'));
-  return lines.length > 0;
+async function checkRepo({ name, fullPath }) {
+  const { err: emptyErr } = await sh('git rev-parse --verify --quiet HEAD', fullPath);
+  if (emptyErr) return { name, fullPath, type: 'empty' };
+
+  const { err: fetchErr, stderr } = await sh('git fetch', fullPath);
+  if (fetchErr) return { name, fullPath, type: 'fetch-failed', stderr };
+
+  const [statusRes, defaultBranch] = await Promise.all([
+    sh('git status --porcelain=v2 --branch', fullPath),
+    getDefaultBranch(fullPath),
+  ]);
+
+  if (statusRes.err) return { name, fullPath, type: 'fetch-failed', stderr: statusRes.stderr };
+
+  const current = parseStatus(statusRes.stdout);
+  const sameAsCurrent = !current.detached && defaultBranch === current.name;
+
+  let defaultStatus = null;
+  if (defaultBranch && !sameAsCurrent) {
+    defaultStatus = await getBranchStatus(fullPath, defaultBranch);
+  }
+
+  return {
+    name,
+    fullPath,
+    type: 'normal',
+    current,
+    defaultBranch,
+    sameAsCurrent,
+    noDefault: defaultBranch === null,
+    currentStatus: current.detached ? null : {
+      ahead: current.ahead,
+      behind: current.behind,
+      hasUpstream: current.hasUpstream,
+    },
+    defaultStatus,
+    dirty: current.dirty,
+  };
+}
+
+async function pull(fullPath) {
+  const { err, stdout, stderr } = await sh('git pull', fullPath);
+  return { err, stdout, stderr };
 }
 
 function ask(question) {
@@ -141,7 +156,7 @@ function ask(question) {
 }
 
 function checkbox(items, preselected = []) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     if (!process.stdin.isTTY) {
       console.error(`${RED}init 需要互動式終端${RESET}`);
       process.exit(1);
@@ -201,83 +216,6 @@ function checkbox(items, preselected = []) {
   });
 }
 
-function loadOwner() {
-  const fileEnv = loadEnvFile();
-  const raw = process.env.PULL_ALL_OWNER || fileEnv.PULL_ALL_OWNER || '';
-  const owner = raw.trim();
-  return owner || null;
-}
-
-async function checkGhAvailable() {
-  const { err } = await sh('gh --version');
-  if (err) {
-    console.error(`${RED}找不到 gh CLI。請先安裝：https://cli.github.com/${RESET}`);
-    return false;
-  }
-  return true;
-}
-
-async function checkGhAuth() {
-  const { err, stderr } = await sh('gh auth status');
-  if (err) {
-    console.error(`${RED}gh 尚未登入，請執行：gh auth login${RESET}`);
-    if (stderr) console.error(`${GRAY}${stderr}${RESET}`);
-    return false;
-  }
-  return true;
-}
-
-async function cloneRepo(owner, name, rootDir) {
-  const { err, stderr } = await sh(`gh repo clone ${owner}/${name}`, rootDir);
-  return { name, ok: !err, stderr };
-}
-
-async function checkRepo(target) {
-  const { name, fullPath } = target;
-
-  if (await isEmptyRepo(fullPath)) {
-    return { name, fullPath, type: 'empty' };
-  }
-
-  const fetch = await fetchRepo(fullPath);
-  if (!fetch.ok) {
-    return { name, fullPath, type: 'fetch-failed', stderr: fetch.stderr };
-  }
-
-  const current = await getCurrentBranch(fullPath);
-  const defaultBranch = await getDefaultBranch(fullPath);
-  const dirty = await isDirty(fullPath);
-
-  let currentStatus = null;
-  if (!current.detached) {
-    currentStatus = await getBranchStatus(fullPath, current.name);
-  }
-
-  let defaultStatus = null;
-  const sameAsCurrent = !current.detached && defaultBranch === current.name;
-  if (defaultBranch && !sameAsCurrent) {
-    defaultStatus = await getBranchStatus(fullPath, defaultBranch);
-  }
-
-  return {
-    name,
-    fullPath,
-    type: 'normal',
-    current,
-    defaultBranch,
-    sameAsCurrent,
-    noDefault: defaultBranch === null,
-    currentStatus,
-    defaultStatus,
-    dirty,
-  };
-}
-
-async function pull(fullPath) {
-  const { err, stdout, stderr } = await sh('git pull', fullPath);
-  return { err, stdout, stderr };
-}
-
 function formatBranchSegment({ ahead, behind, dirty }) {
   const parts = [];
   if (ahead > 0) parts.push(`⇡${ahead}`);
@@ -312,7 +250,6 @@ function renderRepo(r, maxNameLen) {
 
   const lines = [];
 
-  // 判斷 default / current 是否「有事」
   let defaultHasEvent = false;
   if (r.defaultStatus) {
     const { ahead, behind, hasUpstream } = r.defaultStatus;
@@ -325,7 +262,6 @@ function renderRepo(r, maxNameLen) {
     currentHasEvent = ahead > 0 || behind > 0 || !hasUpstream || r.dirty;
   }
 
-  // current == default：只列一條
   if (r.sameAsCurrent) {
     const { ahead, behind, hasUpstream } = r.currentStatus;
     const seg = formatBranchSegment({ ahead, behind, dirty: r.dirty });
@@ -334,7 +270,6 @@ function renderRepo(r, maxNameLen) {
     return lines;
   }
 
-  // 無 default branch
   if (r.noDefault) {
     lines.push(`${YELLOW}⚠ ${pad(r.name)}  無預設分支${RESET}`);
     if (r.current.detached) {
@@ -348,7 +283,6 @@ function renderRepo(r, maxNameLen) {
     return lines;
   }
 
-  // current ≠ default：兩條都可能要列
   const showCurrent = currentHasEvent;
   const showDefault = defaultHasEvent || !showCurrent;
   let firstLine = true;
@@ -384,6 +318,30 @@ function formatSkippedNames(names) {
   return `${shown}${more}`;
 }
 
+function updateEnvFile(envPath, key, value) {
+  let lines = [];
+  if (fs.existsSync(envPath)) {
+    lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+  }
+
+  const keyPrefix = `${key}=`;
+  const idx = lines.findIndex(l => l.startsWith(keyPrefix));
+  const newLine = `${key}=${value}`;
+
+  if (idx !== -1) {
+    lines[idx] = newLine;
+  } else {
+    if (lines.length > 0 && lines[lines.length - 1] === '') {
+      lines[lines.length - 1] = newLine;
+      lines.push('');
+    } else {
+      lines.push(newLine);
+    }
+  }
+
+  fs.writeFileSync(envPath, lines.join('\n'));
+}
+
 async function main() {
   const parentDir = resolveRoot();
   console.log(`${GRAY}root: ${parentDir}${RESET}`);
@@ -391,7 +349,7 @@ async function main() {
     .filter(e => e.isDirectory())
     .map(e => e.name);
 
-  const include = loadIncludeList();
+  const include = parseInclude(env('PULL_ALL'));
   let targets = [];
 
   if (include.length > 0) {
@@ -476,30 +434,6 @@ async function main() {
   }
 }
 
-function updateEnvFile(envPath, key, value) {
-  let lines = [];
-  if (fs.existsSync(envPath)) {
-    lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
-  }
-
-  const keyPrefix = `${key}=`;
-  const idx = lines.findIndex(l => l.startsWith(keyPrefix));
-  const newLine = `${key}=${value}`;
-
-  if (idx !== -1) {
-    lines[idx] = newLine;
-  } else {
-    if (lines.length > 0 && lines[lines.length - 1] === '') {
-      lines[lines.length - 1] = newLine;
-      lines.push('');
-    } else {
-      lines.push(newLine);
-    }
-  }
-
-  fs.writeFileSync(envPath, lines.join('\n'));
-}
-
 async function runInit() {
   const parentDir = resolveRoot();
   console.log(`${GRAY}root: ${parentDir}${RESET}`);
@@ -514,36 +448,32 @@ async function runInit() {
   }
 
   const envPath = path.join(__dirname, '.env');
-  const fileEnv = loadEnvFile();
-  const currentInclude = parseIncludeList(process.env.PULL_ALL_INCLUDE || fileEnv.PULL_ALL_INCLUDE);
-  const preselected = currentInclude.filter(name => repos.includes(name));
+  const preselected = parseInclude(env('PULL_ALL')).filter(name => repos.includes(name));
 
   const chosen = await checkbox(repos, preselected);
 
-  const value = chosen.join(',');
-  updateEnvFile(envPath, 'PULL_ALL_INCLUDE', value);
+  updateEnvFile(envPath, 'PULL_ALL', chosen.join(','));
 
   const display = chosen.length > 0 ? chosen.join(', ') : '（全部）';
   console.log(`${GREEN}✓ 已寫入 ${envPath}${RESET}`);
-  console.log(`  PULL_ALL_INCLUDE=${display}`);
+  console.log(`  PULL_ALL=${display}`);
 }
 
 async function runClone() {
   const rootDir = resolveRoot();
   console.log(`${GRAY}root: ${rootDir}${RESET}`);
 
-  const ghReady = (await checkGhAvailable()) && (await checkGhAuth());
-  if (!ghReady) process.exit(1);
-
-  const owner = loadOwner();
-  if (!owner) {
-    console.error(`${RED}未設定 PULL_ALL_OWNER。請在 .env 加上 PULL_ALL_OWNER=<github-owner>${RESET}`);
+  const { err: ownerErr, stdout: ownerOut, stderr: ownerStderr } = await sh('gh api user --jq .login');
+  if (ownerErr) {
+    console.error(`${RED}無法取得 GitHub 帳號。請確認 gh CLI 已安裝並執行：gh auth login${RESET}`);
+    if (ownerStderr) console.error(`${GRAY}${ownerStderr}${RESET}`);
     process.exit(1);
   }
+  const owner = ownerOut;
 
-  const include = loadIncludeList();
+  const include = parseInclude(env('PULL_ALL'));
   if (include.length === 0) {
-    console.log('.env 未設定 PULL_ALL_INCLUDE，無 repo 可 clone。');
+    console.log('.env 未設定 PULL_ALL，無 repo 可 clone。');
     return;
   }
 
@@ -558,9 +488,7 @@ async function runClone() {
   for (const name of include) {
     const fullPath = path.join(rootDir, name);
     if (fs.existsSync(fullPath)) {
-      if (!isGitRepo(fullPath)) {
-        skipped.push(name);
-      }
+      if (!isGitRepo(fullPath)) skipped.push(name);
       continue;
     }
     toClone.push(name);
@@ -577,7 +505,12 @@ async function runClone() {
 
   console.log(`正在 clone ${toClone.length} 個 repo...\n`);
 
-  const results = await Promise.all(toClone.map(name => cloneRepo(owner, name, rootDir)));
+  const results = await Promise.all(
+    toClone.map(async (name) => {
+      const { err, stderr } = await sh(`gh repo clone ${owner}/${name}`, rootDir);
+      return { name, ok: !err, stderr };
+    })
+  );
 
   for (const { name, ok, stderr } of results) {
     if (ok) {

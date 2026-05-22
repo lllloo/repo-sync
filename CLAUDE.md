@@ -21,20 +21,13 @@ node index.js help     # 顯示說明
 
 **單一入口**：所有邏輯都在 `index.js`，無額外模組。純 Node.js stdlib + `child_process.exec`（包裝為 `sh()`）。
 
-**兩個根目錄概念，不要混淆**：
-
-| 概念 | 決定方式 | 用途 |
-|---|---|---|
-| 掃描根目錄 | `resolveRoot()` → `PULL_ALL_ROOT` 或 `path.dirname(process.cwd())` | 找兄弟 repo |
-| `.env` 位置 | `__dirname`（pull-all repo 根目錄，固定） | 讀寫設定 |
-
-修改 `.env` 讀寫邏輯時，兩者必須保持解耦。
+**根目錄固定**：`resolveRoot()` 永遠回傳 `path.dirname(__dirname)`（pull-all repo 的父目錄），不受 cwd 影響。`.env` 位置同樣固定於 `__dirname`。
 
 **主流程（`main()`）**：
 
 1. `resolveRoot()` 取得掃描根目錄
-2. 套用 `PULL_ALL_INCLUDE` 白名單篩選目標 repo
-3. `Promise.all` 並行對每個 repo 執行 `checkRepo()`：fetch → 偵測 default branch + current branch → 計算 ahead/behind → 偵測 dirty
+2. 套用 `PULL_ALL` 白名單篩選目標 repo
+3. `Promise.all` 並行對每個 repo 執行 `checkRepo()`：fetch → 並行取 `git status --porcelain=v2 --branch` + default branch → 計算 ahead/behind → 偵測 dirty
 4. `renderRepo()` 輸出狀態（顯示 default branch 與 current branch 兩條，相同時合併）
 5. 篩出 pull 候選（current branch：有 upstream + behind > 0 + clean）
 6. dirty + behind 的 repo 自動跳過，不問
@@ -46,9 +39,7 @@ node index.js help     # 顯示說明
 
 | 變數 | 作用 |
 |---|---|
-| `PULL_ALL_INCLUDE` | 要追蹤的 repo 名稱，逗號分隔；空白則掃全部 |
-| `PULL_ALL_ROOT` | 指定掃描根目錄（不取 cwd 父目錄） |
-| `PULL_ALL_OWNER` | `clone` 子命令使用的 GitHub owner |
+| `PULL_ALL` | 要追蹤的 repo 名稱，逗號分隔；空白則掃全部 |
 
 ## OpenSpec 變更管理
 

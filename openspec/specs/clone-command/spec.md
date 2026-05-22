@@ -29,39 +29,31 @@
 - **WHEN** `gh --version` 與 `gh auth status` 皆成功
 - **THEN** 系統繼續執行後續流程
 
-### Requirement: 解析 PULL_ALL_OWNER 設定
-系統 SHALL 從 `PULL_ALL_OWNER` 環境變數或 pull-all repo 根目錄下的 `.env` 讀取 GitHub owner，未設定 MUST 以非 0 exit code 結束並印出指引。`.env` 位置 MUST 與 `PULL_ALL_INCLUDE` 使用相同規則：以 pull-all 工具 repo 根目錄為錨點，不跟隨掃描根目錄或 cwd。
+### Requirement: 從 gh CLI 自動取得 owner
+系統 SHALL 執行 `gh api user --jq .login` 取得當前已登入的 GitHub 帳號作為 owner，不再讀取 `PULL_ALL_OWNER` 環境變數或 `.env`。
 
-#### Scenario: 從 .env 讀取
-- **WHEN** pull-all repo 根目錄下 `.env` 含 `PULL_ALL_OWNER=barney` 且環境變數未覆寫
-- **THEN** 系統使用 `barney` 作為 owner
+#### Scenario: gh 已登入
+- **WHEN** `gh api user --jq .login` 成功回傳帳號名稱
+- **THEN** 系統使用該帳號名稱作為 clone 的 owner
 
-#### Scenario: 環境變數覆寫 .env
-- **WHEN** `.env` 與 `process.env` 同時設定 `PULL_ALL_OWNER`，且兩者值不同
-- **THEN** 系統使用 `process.env.PULL_ALL_OWNER` 的值（與 `PULL_ALL_INCLUDE` 的優先序一致）
+#### Scenario: gh 未登入或 API 失敗
+- **WHEN** `gh api user --jq .login` 回傳非 0 exit code
+- **THEN** 印出錯誤訊息提示執行 `gh auth login`，以非 0 exit code 結束
 
-#### Scenario: 未設定 owner
-- **WHEN** pull-all repo 根目錄下 `.env` 與 `process.env` 皆未設定 `PULL_ALL_OWNER`
-- **THEN** 印出錯誤訊息指引設定 `PULL_ALL_OWNER`，以非 0 exit code 結束
-
-#### Scenario: owner 為空字串
-- **WHEN** `PULL_ALL_OWNER` 存在但值為空白或空字串
-- **THEN** 視同未設定，依「未設定 owner」場景處理
-
-### Requirement: 解析 PULL_ALL_INCLUDE 並驗證名字格式
-系統 SHALL 讀取 `PULL_ALL_INCLUDE` 取得 repo 名字清單，名字含 `/` MUST 視為錯誤格式並以非 0 exit code 結束。
+### Requirement: 解析 PULL_ALL 並驗證名字格式
+系統 SHALL 讀取 `PULL_ALL` 取得 repo 名字清單，名字含 `/` MUST 視為錯誤格式並以非 0 exit code 結束。`PULL_ALL_INCLUDE` SHALL NOT 再被讀取。
 
 #### Scenario: 名字清單合法
-- **WHEN** `PULL_ALL_INCLUDE=web,common,note`
+- **WHEN** `PULL_ALL=web,common,note`
 - **THEN** 系統取得 `["web", "common", "note"]` 作為候選清單
 
 #### Scenario: 名字含 /
-- **WHEN** `PULL_ALL_INCLUDE` 任一項含 `/`（如 `barney/web`）
+- **WHEN** `PULL_ALL` 任一項含 `/`（如 `barney/web`）
 - **THEN** 印出錯誤訊息「目前僅支援單一 owner，名字不可含 /」並以非 0 exit code 結束
 
 #### Scenario: 清單為空
-- **WHEN** `PULL_ALL_INCLUDE` 未設定或解析後為空
-- **THEN** 印出提示訊息「.env 未設定 PULL_ALL_INCLUDE，無 repo 可 clone」並以 exit code 0 結束
+- **WHEN** `PULL_ALL` 未設定或解析後為空
+- **THEN** 印出提示訊息「.env 未設定 PULL_ALL，無 repo 可 clone」並以 exit code 0 結束
 
 ### Requirement: 計算缺漏 repo 清單
 系統 SHALL 將 `PULL_ALL_INCLUDE` 名字清單與掃描根目錄下實際存在的子資料夾比對，僅對「本機不存在」或「存在但非 git repo」的項目進入後續處理。
@@ -112,14 +104,10 @@
 - **WHEN** 名字因「已存在但非 git repo」被跳過
 - **THEN** 顯示黃色警告 `⚠ <name> 已存在但不是 git repo，跳過`
 
-### Requirement: 沿用掃描根目錄解析
-系統 SHALL 沿用既有 `resolveRoot()` 規則解析掃描根目錄，優先序為 `PULL_ALL_ROOT` 環境變數 → `process.cwd()` 父目錄。掃描根目錄 SHALL 用於比對本機 repo 與作為 `gh repo clone` 工作目錄；`.env` 位置 MUST 不由掃描根目錄決定。
+### Requirement: 掃描根目錄固定化
+系統 SHALL 以 `path.dirname(__dirname)` 作為固定掃描根目錄，用於比對本機 repo 與作為 `gh repo clone` 工作目錄。`PULL_ALL_ROOT` 環境變數 SHALL NOT 再被讀取。
 
-#### Scenario: 使用 PULL_ALL_ROOT
-- **WHEN** 環境變數 `PULL_ALL_ROOT=/srv/projects` 已設定
-- **THEN** 系統將 clone 工作目錄設為 `/srv/projects`，並仍從 pull-all repo 根目錄下 `.env` 讀取設定
-
-#### Scenario: 預設使用 cwd 父目錄
-- **WHEN** 未設定 `PULL_ALL_ROOT`，使用者在 `~/code/web/` 執行 `pull-all clone`
-- **THEN** 系統將 clone 工作目錄設為 `~/code/`，並仍從 pull-all repo 根目錄下 `.env` 讀取設定
+#### Scenario: clone 工作目錄固定
+- **WHEN** 使用者在任意目錄執行 `pull-all clone`
+- **THEN** 系統將 clone 工作目錄固定設為 `path.dirname(__dirname)`，即 pull-all repo 的父目錄
 
