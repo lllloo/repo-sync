@@ -110,26 +110,25 @@ npm run init
 同步清單屬於本機設定，請放在 `.env`，不要提交到 git。
 
 ```env
-PULL_ALL_INCLUDE=web,common,note
+PULL_ALL=web,common,note
+```
+
+支援 `parent/child` 格式，用於追蹤放在子目錄裡的 git repo：
+
+```env
+PULL_ALL=web,common,obsidian,obsidian/obsidian-deploy,obsidian/obsidian-memory
 ```
 
 | 設定 | 行為 |
 | --- | --- |
-| 有 `PULL_ALL_INCLUDE` | 只檢查清單內的 repo |
-| 無 `.env` 或 `PULL_ALL_INCLUDE` 為空 | 檢查父目錄下所有 git repo |
+| 有 `PULL_ALL` | 只檢查清單內的 repo |
+| 無 `.env` 或 `PULL_ALL` 為空 | 檢查父目錄下所有 git repo |
 | 清單內 repo 不存在 | 顯示警告，其他 repo 照常執行（用 `pull-all clone` 補回） |
 | 清單內目錄不是 git repo | 跳過該目錄 |
-| `PULL_ALL_OWNER` | `pull-all clone` 使用的 GitHub owner（個人或 org 帳號），未設定時 `clone` 會報錯 |
-
-也可以臨時用 shell 環境變數覆蓋 `.env`：
-
-```bash
-PULL_ALL_INCLUDE=web,common node index.js
-```
 
 ## 執行流程
 
-1. 掃描根目錄（`PULL_ALL_ROOT` 或 cwd 父目錄）下的 repo，套用 `PULL_ALL_INCLUDE` 白名單。
+1. 掃描根目錄（cwd 父目錄）下的 repo，套用 `PULL_ALL` 白名單。
 2. 對每個 repo：偵測是否為空 repo（無 commit）→ 並行 `git fetch` → 偵測 default branch（`origin/HEAD` → `main` → `master`）→ 計算 default 與 current 兩條 branch 的 ahead / behind → 偵測 working tree dirty。
 3. 列出狀態摘要（緊湊符號，見下方圖例）。
 4. 只對「current branch 有 upstream + ⇣ > 0 + working tree clean」的 repo 詢問是否 `git pull`。
@@ -186,12 +185,6 @@ root: /Users/barney/code
 
 - 已安裝 [gh CLI](https://cli.github.com/)
 - 已執行 `gh auth login`
-- `.env` 設定 `PULL_ALL_OWNER`（GitHub 個人或 org 帳號）
-
-```env
-PULL_ALL_INCLUDE=web,common,note
-PULL_ALL_OWNER=barney
-```
 
 ```bash
 node index.js clone
@@ -202,13 +195,12 @@ pull-all clone
 流程：
 
 1. 檢查 `gh` 已安裝且已登入，任一失敗即報錯結束。
-2. 讀 `PULL_ALL_OWNER` 與 `PULL_ALL_INCLUDE`。
-3. 比對掃描根目錄，對本機不存在的名字並行執行 `gh repo clone <OWNER>/<name>`。
+2. 從 `gh api user` 自動取得 GitHub 帳號，讀 `PULL_ALL` 清單。
+3. 比對掃描根目錄，對本機不存在的名字並行執行 clone；`parent/child` 格式會自動建立 parent 目錄。
 4. 已存在但不是 git repo 的目錄會跳過警告，不覆蓋既有檔案。
 
 限制：
 
-- 目前僅支援單一 owner，名字含 `/` 會直接報錯。
 - 只支援 GitHub。GitLab、Bitbucket、自架 Gitea 不在範圍。
 - 主 `pull-all` 與 `pull-all init` 不受影響，不需要 `gh`。
 
@@ -230,7 +222,7 @@ node index.js
 npm start
 
 # 只同步指定 repo（臨時覆蓋）
-PULL_ALL_INCLUDE=web,common node index.js
+PULL_ALL=web,common node index.js
 ```
 
 ## 遷移指引
