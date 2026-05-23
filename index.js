@@ -168,7 +168,8 @@ function checkbox(items, preselected = []) {
     function render() {
       const lines = items.map((item, i) => {
         const check = selected.has(item) ? 'x' : ' ';
-        const line = `  [${check}] ${item}`;
+        const indent = item.includes('/') ? '  ' : '';
+        const line = `  [${check}] ${indent}${item}`;
         return i === cursor ? `${INVERT}${line}${RESET}` : line;
       });
       process.stdout.write(lines.join('\n'));
@@ -442,10 +443,20 @@ async function main() {
 async function runInit() {
   const parentDir = resolveRoot();
   console.log(`${GRAY}root: ${parentDir}${RESET}`);
-  const repos = fs.readdirSync(parentDir, { withFileTypes: true })
-    .filter(e => e.isDirectory() && isGitRepo(path.join(parentDir, e.name)))
-    .map(e => e.name)
-    .sort();
+
+  const entries = fs.readdirSync(parentDir, { withFileTypes: true }).filter(e => e.isDirectory());
+  const repos = [];
+  for (const e of entries) {
+    const fullPath = path.join(parentDir, e.name);
+    if (!isGitRepo(fullPath)) continue;
+    repos.push(e.name);
+    try {
+      const children = fs.readdirSync(fullPath, { withFileTypes: true })
+        .filter(c => c.isDirectory() && isGitRepo(path.join(fullPath, c.name)));
+      for (const child of children) repos.push(`${e.name}/${child.name}`);
+    } catch (_) {}
+  }
+  repos.sort();
 
   if (repos.length === 0) {
     console.log('找不到任何 git repo。');
@@ -482,12 +493,6 @@ async function runClone() {
     return;
   }
 
-  const invalid = include.filter(name => name.includes('/'));
-  if (invalid.length > 0) {
-    console.error(`${RED}目前僅支援單一 owner，名字不可含 /：${invalid.join(', ')}${RESET}`);
-    process.exit(1);
-  }
-
   const toClone = [];
   const skipped = [];
   for (const name of include) {
@@ -512,7 +517,19 @@ async function runClone() {
 
   const results = await Promise.all(
     toClone.map(async (name) => {
-      const { err, stderr } = await sh(`gh repo clone ${owner}/${name}`, rootDir);
+      const segments = name.split('/');
+      const repoName = segments[segments.length - 1];
+      const cloneDir = segments.length > 1
+        ? path.join(rootDir, ...segments.slice(0, -1))
+        : rootDir;
+      if (segments.length > 1) {
+        try {
+          fs.mkdirSync(cloneDir, { recursive: true });
+        } catch (e) {
+          return { name, ok: false, stderr: `無法建立目錄 ${cloneDir}：${e.message}` };
+        }
+      }
+      const { err, stderr } = await sh(`gh repo clone ${owner}/${repoName}`, cloneDir);
       return { name, ok: !err, stderr };
     })
   );

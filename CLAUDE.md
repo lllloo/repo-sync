@@ -41,7 +41,7 @@ npm link               # 安裝全域 pull-all 指令
 
 | 變數 | 作用 |
 |---|---|
-| `PULL_ALL` | 要追蹤的 repo 名稱，逗號分隔；空白則掃全部 |
+| `PULL_ALL` | 要追蹤的 repo 名稱，逗號分隔；支援 `parent/child` 格式（巢狀 repo）；空白則掃全部 |
 
 ## OpenSpec 變更管理
 
