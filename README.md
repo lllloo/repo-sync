@@ -47,36 +47,19 @@ npm link
 
 ## 使用方式
 
-`pull-all` 以「當前工作目錄的父目錄」為掃描根目錄，因此可在 code 目錄底下任一 repo 內執行：
+`pull-all` 的掃描根目錄固定為 **pull-all repo 的父目錄**（`path.dirname(__dirname)`），不受當前工作目錄影響——從哪裡執行都掃同一坨兄弟 repo：
 
 ```bash
 cd ~/code/web
 pull-all
-# 掃 ~/code/ 底下的兄弟 repo
-```
-
-或直接在 code 目錄底下：
-
-```bash
-cd ~/code/pull-all
-pull-all
-# 一樣掃 ~/code/ 底下
+# pull-all 位於 ~/code/pull-all，固定掃 ~/code/ 底下的兄弟 repo
 ```
 
 未 `npm link` 也可：
 
 ```bash
-node ~/code/pull-all/index.js   # 仍以 cwd 父目錄為準
+node ~/code/pull-all/index.js   # 一樣掃 ~/code/，與 cwd 無關
 npm start                        # 在 pull-all/ 目錄內
-```
-
-### 用 `PULL_ALL_ROOT` 明確指定根目錄
-
-從任意位置都想固定掃同一坨 repo（如 CI、cron、跨機 dotfiles），用 `PULL_ALL_ROOT` 直接指定根目錄（**不取父目錄**，掃這個目錄底下的子資料夾）：
-
-```bash
-PULL_ALL_ROOT=~/code pull-all
-PULL_ALL_ROOT=/srv/projects pull-all
 ```
 
 執行時頂部會印出實際解析的 root 路徑，方便確認沒走錯地方。
@@ -128,7 +111,7 @@ PULL_ALL=web,common,obsidian,obsidian/obsidian-deploy,obsidian/obsidian-memory
 
 ## 執行流程
 
-1. 掃描根目錄（cwd 父目錄）下的 repo，套用 `PULL_ALL` 白名單。
+1. 掃描根目錄（pull-all repo 父目錄）下的 repo，套用 `PULL_ALL` 白名單。
 2. 對每個 repo：偵測是否為空 repo（無 commit）→ 並行 `git fetch` → 偵測 default branch（`origin/HEAD` → `main` → `master`）→ 計算 default 與 current 兩條 branch 的 ahead / behind → 偵測 working tree dirty。
 3. 列出狀態摘要（緊湊符號，見下方圖例）。
 4. 只對「current branch 有 upstream + ⇣ > 0 + working tree clean」的 repo 詢問是否 `git pull`。
@@ -227,7 +210,7 @@ PULL_ALL=web,common node index.js
 
 ## 遷移指引
 
-中間有段時間（`resolve-paths-from-cwd` 之後）`.env` 預期放在「掃描根目錄」（cwd 父目錄或 `PULL_ALL_ROOT`）。現已**改回 pull-all repo 根目錄**，與 `.env.example` 位置一致。從 pull-all repo 內執行：
+中間有段時間（`resolve-paths-from-cwd` 之後）`.env` 預期放在「掃描根目錄」。現已**改回 pull-all repo 根目錄**，與 `.env.example` 位置一致。從 pull-all repo 內執行：
 
 ```bash
 mv ../.env .env
@@ -237,7 +220,6 @@ mv ../.env .env
 
 - 當初把 `.env` 搬離 repo 的主要動機是「`npm link` 全域安裝後 `__dirname` 會指向 npm global lib」——查證為**誤判**。`npm link` 走 symlink，Node 預設 resolve symlink，`__dirname` 仍是 source repo。只有 `npm install -g`（從 registry 真實複製檔案）才會落到 global lib，本專案無 publish 計畫。
 - `.env.example` 留在 repo 內、`.env` 卻在外面，clone 後第一直覺就會踩到。位置一致才是主訴求。
-- `PULL_ALL_ROOT` 與 `.env` 位置現在完全解耦：仍可設 `PULL_ALL_ROOT=/some/path` 掃別處，但 `.env` 永遠跟著工具走。
 
 ## 授權
 
