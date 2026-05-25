@@ -555,8 +555,7 @@ Commands:
   pull-all help     顯示此說明
 
 Options:
-  -h, --help        顯示此說明
-  -v, --version     顯示版本號`);
+  -h, --help        顯示此說明`);
 }
 
 function dispatch(cmd) {

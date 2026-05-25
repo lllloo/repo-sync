@@ -1,7 +1,7 @@
 # clone-command Spec
 
 ## Purpose
-提供 `pull-all clone` 子命令，把 `.env` 的 `PULL_ALL_INCLUDE` 列了但本機不存在的 repo，透過 `gh` CLI 自動 clone 下來，補完整個工作區同步閉環。URL 解析與認證交由 `gh` 處理，本機只維護單一 GitHub `owner` 設定。
+提供 `pull-all clone` 子命令，把 `.env` 的 `PULL_ALL` 列了但本機不存在的 repo，透過 `gh` CLI 自動 clone 下來，補完整個工作區同步閉環。URL 解析與認證交由 `gh` 處理，本機只維護單一 GitHub `owner` 設定。
 ## Requirements
 ### Requirement: clone subcommand 路由
 執行 `pull-all clone` 時，系統 SHALL 進入 clone 流程而非主要 pull 流程或 init 流程。
@@ -14,49 +14,34 @@
 - **WHEN** 使用者執行 `pull-all`（未帶子命令）
 - **THEN** 系統依既有 `main()` 流程執行，與 `clone` 子命令存在與否無關
 
-### Requirement: gh CLI 前置條件檢查
-系統 SHALL 在執行 clone 前確認 `gh` CLI 可執行且已登入，任一檢查失敗 MUST 以非 0 exit code 結束並印出指引。
-
-#### Scenario: gh 未安裝
-- **WHEN** 系統呼叫 `gh --version` 失敗（找不到指令）
-- **THEN** 印出錯誤訊息與安裝連結（如 `https://cli.github.com/`），以非 0 exit code 結束，不嘗試任何 clone
-
-#### Scenario: gh 未登入
-- **WHEN** 系統呼叫 `gh auth status` 回傳非 0 exit code
-- **THEN** 印出錯誤訊息提示執行 `gh auth login`，以非 0 exit code 結束，不嘗試任何 clone
-
-#### Scenario: gh 已就緒
-- **WHEN** `gh --version` 與 `gh auth status` 皆成功
-- **THEN** 系統繼續執行後續流程
-
 ### Requirement: 從 gh CLI 自動取得 owner
-系統 SHALL 執行 `gh api user --jq .login` 取得當前已登入的 GitHub 帳號作為 owner，不再讀取 `PULL_ALL_OWNER` 環境變數或 `.env`。
+系統 SHALL 執行 `gh api user --jq .login` 取得當前已登入的 GitHub 帳號作為 owner，不再讀取 `PULL_ALL_OWNER` 環境變數或 `.env`。此單一指令同時作為 gh CLI 的前置守門：指令失敗（gh 未安裝或未登入）時 MUST 印出指引並以非 0 exit code 結束，不嘗試任何 clone。
 
 #### Scenario: gh 已登入
 - **WHEN** `gh api user --jq .login` 成功回傳帳號名稱
-- **THEN** 系統使用該帳號名稱作為 clone 的 owner
+- **THEN** 系統使用該帳號名稱作為 clone 的 owner，繼續後續流程
 
-#### Scenario: gh 未登入或 API 失敗
-- **WHEN** `gh api user --jq .login` 回傳非 0 exit code
-- **THEN** 印出錯誤訊息提示執行 `gh auth login`，以非 0 exit code 結束
+#### Scenario: gh 未安裝或未登入
+- **WHEN** `gh api user --jq .login` 回傳非 0 exit code（指令不存在或未登入）
+- **THEN** 印出錯誤訊息提示確認 gh 已安裝並執行 `gh auth login`，以非 0 exit code 結束，不嘗試任何 clone
 
-### Requirement: 解析 PULL_ALL 並驗證名字格式
-系統 SHALL 讀取 `PULL_ALL` 取得 repo 名字清單，名字含 `/` MUST 視為錯誤格式並以非 0 exit code 結束。`PULL_ALL_INCLUDE` SHALL NOT 再被讀取。
+### Requirement: 解析 PULL_ALL 取得 repo 清單
+系統 SHALL 讀取 `PULL_ALL` 取得逗號分隔的 repo 名字清單。名字含 `/` SHALL 視為合法的 `parent/child` 巢狀格式（行為見 `nested-repo-clone`），不視為錯誤。
 
 #### Scenario: 名字清單合法
 - **WHEN** `PULL_ALL=web,common,note`
 - **THEN** 系統取得 `["web", "common", "note"]` 作為候選清單
 
-#### Scenario: 名字含 /
-- **WHEN** `PULL_ALL` 任一項含 `/`（如 `barney/web`）
-- **THEN** 印出錯誤訊息「目前僅支援單一 owner，名字不可含 /」並以非 0 exit code 結束
+#### Scenario: 名字含 /（巢狀格式）
+- **WHEN** `PULL_ALL` 任一項含 `/`（如 `obsidian/obsidian-deploy`）
+- **THEN** 系統接受該項，交由 `nested-repo-clone` 的 parent/child 邏輯處理，不報錯
 
 #### Scenario: 清單為空
 - **WHEN** `PULL_ALL` 未設定或解析後為空
-- **THEN** 印出提示訊息「.env 未設定 PULL_ALL，無 repo 可 clone」並以 exit code 0 結束
+- **THEN** 印出引導訊息建議執行 `pull-all init`，並以 exit code 0 結束
 
 ### Requirement: 計算缺漏 repo 清單
-系統 SHALL 將 `PULL_ALL_INCLUDE` 名字清單與掃描根目錄下實際存在的子資料夾比對，僅對「本機不存在」或「存在但非 git repo」的項目進入後續處理。
+系統 SHALL 將 `PULL_ALL` 名字清單與掃描根目錄下實際存在的子資料夾比對，僅對「本機不存在」或「存在但非 git repo」的項目進入後續處理。
 
 #### Scenario: 本機完全不存在
 - **WHEN** 名字 `web` 對應的 `<root>/web` 目錄不存在
@@ -110,4 +95,3 @@
 #### Scenario: clone 工作目錄固定
 - **WHEN** 使用者在任意目錄執行 `pull-all clone`
 - **THEN** 系統將 clone 工作目錄固定設為 `path.dirname(__dirname)`，即 pull-all repo 的父目錄
-
