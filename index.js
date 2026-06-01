@@ -78,25 +78,31 @@ async function getDefaultBranch(dir) {
   const { err, stdout } = await sh('git symbolic-ref --short refs/remotes/origin/HEAD', dir);
   if (!err && stdout) {
     const idx = stdout.indexOf('/');
-    return idx === -1 ? stdout : stdout.slice(idx + 1);
+    const name = idx === -1 ? stdout : stdout.slice(idx + 1);
+    const { err: noLocal } = await sh(`git rev-parse --verify --quiet refs/heads/${name}`, dir);
+    return { name, localExists: !noLocal };
   }
   const { err: noMain } = await sh('git rev-parse --verify --quiet refs/heads/main', dir);
-  if (!noMain) return 'main';
+  if (!noMain) return { name: 'main', localExists: true };
   const { err: noMaster } = await sh('git rev-parse --verify --quiet refs/heads/master', dir);
-  if (!noMaster) return 'master';
+  if (!noMaster) return { name: 'master', localExists: true };
   return null;
 }
 
-async function getBranchStatus(dir, branch) {
-  const [aheadRes, upstreamRes] = await Promise.all([
-    sh(`git rev-list ${branch} --not --remotes --count`, dir),
-    sh(`git rev-parse --verify --quiet ${branch}@{u}`, dir),
-  ]);
+async function getBranchStatus(dir, branch, localExists = true) {
+  if (!localExists) return { ahead: 0, behind: 0, hasUpstream: false, localMissing: true };
+  const upstreamRes = await sh(`git rev-parse --verify --quiet ${branch}@{u}`, dir);
   const hasUpstream = !upstreamRes.err;
+  if (!hasUpstream) {
+    const { stdout } = await sh(`git rev-list ${branch} --not --remotes --count`, dir);
+    return { ahead: parseInt(stdout, 10) || 0, behind: 0, hasUpstream };
+  }
+  const [aheadRes, behindRes] = await Promise.all([
+    sh(`git rev-list ${branch}@{u}..${branch} --count`, dir),
+    sh(`git rev-list ${branch}..${branch}@{u} --count`, dir),
+  ]);
   const ahead = parseInt(aheadRes.stdout, 10) || 0;
-  if (!hasUpstream) return { ahead, behind: 0, hasUpstream };
-  const { err, stdout } = await sh(`git rev-list ${branch}..${branch}@{u} --count`, dir);
-  const behind = err ? 0 : (parseInt(stdout, 10) || 0);
+  const behind = parseInt(behindRes.stdout, 10) || 0;
   return { ahead, behind, hasUpstream };
 }
 
@@ -107,7 +113,7 @@ async function checkRepo({ name, fullPath }) {
   const { err: fetchErr, stderr } = await sh('git fetch', fullPath);
   if (fetchErr) return { name, fullPath, type: 'fetch-failed', stderr };
 
-  const [statusRes, defaultBranch] = await Promise.all([
+  const [statusRes, defaultBranchInfo] = await Promise.all([
     sh('git status --porcelain=v2 --branch', fullPath),
     getDefaultBranch(fullPath),
   ]);
@@ -115,11 +121,12 @@ async function checkRepo({ name, fullPath }) {
   if (statusRes.err) return { name, fullPath, type: 'fetch-failed', stderr: statusRes.stderr };
 
   const current = parseStatus(statusRes.stdout);
+  const defaultBranch = defaultBranchInfo ? defaultBranchInfo.name : null;
   const sameAsCurrent = !current.detached && defaultBranch === current.name;
 
   let defaultStatus = null;
-  if (defaultBranch && !sameAsCurrent) {
-    defaultStatus = await getBranchStatus(fullPath, defaultBranch);
+  if (defaultBranchInfo && !sameAsCurrent) {
+    defaultStatus = await getBranchStatus(fullPath, defaultBranchInfo.name, defaultBranchInfo.localExists);
   }
 
   return {
@@ -253,8 +260,8 @@ function renderRepo(r, maxNameLen) {
 
   let defaultHasEvent = false;
   if (r.defaultStatus) {
-    const { ahead, behind, hasUpstream } = r.defaultStatus;
-    defaultHasEvent = ahead > 0 || behind > 0 || !hasUpstream;
+    const { ahead, behind, hasUpstream, localMissing } = r.defaultStatus;
+    defaultHasEvent = localMissing || ahead > 0 || behind > 0 || !hasUpstream;
   }
 
   let currentHasEvent = false;
@@ -290,10 +297,14 @@ function renderRepo(r, maxNameLen) {
   const repoCol = () => (firstLine ? pad(r.name) : blank);
 
   if (showDefault && r.defaultStatus) {
-    const { ahead, behind, hasUpstream } = r.defaultStatus;
-    const seg = formatBranchSegment({ ahead, behind, dirty: false });
-    const color = pickColor({ behind, dirty: false, ahead, hasUpstream });
-    lines.push(`${color}  ${repoCol()}  ${seg}  ${branchLabel(r.defaultBranch, hasUpstream)}${RESET}`);
+    if (r.defaultStatus.localMissing) {
+      lines.push(`${GRAY}  ${repoCol()}  (本機無此分支)  (${r.defaultBranch})${RESET}`);
+    } else {
+      const { ahead, behind, hasUpstream } = r.defaultStatus;
+      const seg = formatBranchSegment({ ahead, behind, dirty: false });
+      const color = pickColor({ behind, dirty: false, ahead, hasUpstream });
+      lines.push(`${color}  ${repoCol()}  ${seg}  ${branchLabel(r.defaultBranch, hasUpstream)}${RESET}`);
+    }
     firstLine = false;
   }
 
