@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="./assets/readme-header.png" alt="pull-all - sync sibling git repos">
+  <img src="./assets/readme-header.png" alt="sync-git - sync sibling git repos">
 </p>
 
-# pull-all
+# sync-git
 
-`pull-all` 是一個零相依的 Node.js CLI，用來檢查同一層目錄下的多個 git repo，並只對落後遠端的 repo 執行 `git pull`。
+`sync-git` 是一個零相依的 Node.js CLI，用來檢查同一層目錄下的多個 git repo，並只對落後遠端的 repo 執行 `git pull`。
 
 ## 為什麼做這個
 
-使用 Codex 時常會同時維護多個專案，每次都要逐一進到各個 repo 執行 `git pull` 很麻煩。`pull-all` 讓你在一個地方檢查同層專案的更新狀態，先確認哪些 repo 落後遠端，再決定是否一次更新。
+使用 Codex 時常會同時維護多個專案，每次都要逐一進到各個 repo 執行 `git pull` 很麻煩。`sync-git` 讓你在一個地方檢查同層專案的更新狀態，先確認哪些 repo 落後遠端，再決定是否一次更新。
 
 ## 特色
 
@@ -26,7 +26,7 @@
 
 ```text
 ~/code/
-  pull-all/
+  sync-git/
   web/
   common/
   note/
@@ -39,38 +39,24 @@ node --version
 git --version
 ```
 
-建立全域指令（建議）：
-
-```bash
-npm link
-```
-
 ## 使用方式
 
-`pull-all` 的掃描根目錄固定為 **pull-all repo 的父目錄**（`path.dirname(__dirname)`），不受當前工作目錄影響——從哪裡執行都掃同一坨兄弟 repo：
+`sync-git` 的掃描根目錄固定為 **sync-git repo 的父目錄**（`path.dirname(__dirname)`），不受當前工作目錄影響——從哪裡執行都掃同一坨兄弟 repo：
 
 ```bash
-cd ~/code/web
-pull-all
-# pull-all 位於 ~/code/pull-all，固定掃 ~/code/ 底下的兄弟 repo
-```
-
-未 `npm link` 也可：
-
-```bash
-node ~/code/pull-all/index.js   # 一樣掃 ~/code/，與 cwd 無關
-npm start                        # 在 pull-all/ 目錄內
+node ~/code/sync-git/index.js   # 從任何位置執行，都掃 ~/code/ 底下的兄弟 repo
+npm start                        # 在 sync-git/ 目錄內等效
 ```
 
 執行時頂部會印出實際解析的 root 路徑，方便確認沒走錯地方。
 
 ## 設定
 
-`.env` 寫在 **pull-all repo 根目錄**（與 `.env.example` 同位置），與「掃描根目錄」解耦。不論在哪個 cwd 呼叫，工具都從同一處讀寫 `.env`。
+`.env` 寫在 **sync-git repo 根目錄**（與 `.env.example` 同位置），與「掃描根目錄」解耦。不論在哪個 cwd 呼叫，工具都從同一處讀寫 `.env`。
 
 ### 快速初始化（建議）
 
-執行 `init` 指令，互動式勾選要追蹤的 repo，自動寫入 pull-all repo 根目錄下的 `.env`：
+執行 `init` 指令，互動式勾選要追蹤的 repo，自動寫入 sync-git repo 根目錄下的 `.env`：
 
 ```bash
 node index.js init
@@ -93,25 +79,25 @@ npm run init
 同步清單屬於本機設定，請放在 `.env`，不要提交到 git。
 
 ```env
-PULL_ALL=web,common,note
+SYNC_REPOS=web,common,note
 ```
 
 支援 `parent/child` 格式，用於追蹤放在子目錄裡的 git repo：
 
 ```env
-PULL_ALL=web,common,obsidian,obsidian/obsidian-deploy,obsidian/obsidian-memory
+SYNC_REPOS=web,common,obsidian,obsidian/obsidian-deploy,obsidian/obsidian-memory
 ```
 
 | 設定 | 行為 |
 | --- | --- |
-| 有 `PULL_ALL` | 只檢查清單內的 repo |
-| 無 `.env` 或 `PULL_ALL` 未設定 | 停下並提示執行 `pull-all init` 勾選，不檢查任何 repo |
-| 清單內 repo 不存在 | 顯示警告，其他 repo 照常執行（用 `pull-all clone` 補回） |
+| 有 `SYNC_REPOS` | 只檢查清單內的 repo |
+| 無 `.env` 或 `SYNC_REPOS` 未設定 | 停下並提示執行 `sync-git init` 勾選，不檢查任何 repo |
+| 清單內 repo 不存在 | 顯示警告，其他 repo 照常執行（用 `sync-git clone` 補回） |
 | 清單內目錄不是 git repo | 跳過該目錄 |
 
 ## 執行流程
 
-1. 掃描根目錄（pull-all repo 父目錄）下的 repo，套用 `PULL_ALL` 白名單。
+1. 掃描根目錄（sync-git repo 父目錄）下的 repo，套用 `SYNC_REPOS` 白名單。
 2. 對每個 repo：偵測是否為空 repo（無 commit）→ 並行 `git fetch` → 偵測 default branch（`origin/HEAD` → `main` → `master`）→ 計算 default 與 current 兩條 branch 的 ahead / behind → 偵測 working tree dirty。
 3. 列出狀態摘要（緊湊符號，見下方圖例）。
 4. 只對「current branch 有 upstream + ⇣ > 0 + working tree clean」的 repo 詢問是否 `git pull`。
@@ -160,9 +146,9 @@ root: /Users/barney/code
 - 兩條 branch 都沒事（`✓`、無 dirty、有 upstream）時，只列 default 一條當代表，抑制雜訊。
 - dirty 永遠標在 current branch 那一行（即使 current 本身是 `✓`）。
 
-## 補回缺漏 repo（`pull-all clone`）
+## 補回缺漏 repo（`sync-git clone`）
 
-`.env` 列了但本機沒有的 repo，可用 `pull-all clone` 自動補回。URL 解析、認證、protocol 全部交給 `gh` CLI 處理。
+`.env` 列了但本機沒有的 repo，可用 `sync-git clone` 自動補回。URL 解析、認證、protocol 全部交給 `gh` CLI 處理。
 
 前置條件：
 
@@ -172,20 +158,20 @@ root: /Users/barney/code
 ```bash
 node index.js clone
 # 或
-pull-all clone
+sync-git clone
 ```
 
 流程：
 
 1. 檢查 `gh` 已安裝且已登入，任一失敗即報錯結束。
-2. 從 `gh api user` 自動取得 GitHub 帳號，讀 `PULL_ALL` 清單。
+2. 從 `gh api user` 自動取得 GitHub 帳號，讀 `SYNC_REPOS` 清單。
 3. 比對掃描根目錄，對本機不存在的名字並行執行 clone；`parent/child` 格式會自動建立 parent 目錄。
 4. 已存在但不是 git repo 的目錄會跳過警告，不覆蓋既有檔案。
 
 限制：
 
 - 只支援 GitHub。GitLab、Bitbucket、自架 Gitea 不在範圍。
-- 主 `pull-all` 與 `pull-all init` 不受影響，不需要 `gh`。
+- 主 `sync-git` 與 `sync-git init` 不受影響，不需要 `gh`。
 
 ## 常用指令
 
@@ -205,12 +191,36 @@ node index.js
 npm start
 
 # 只同步指定 repo（臨時覆蓋）
-PULL_ALL=web,common node index.js
+SYNC_REPOS=web,common node index.js
 ```
 
 ## 遷移指引
 
-中間有段時間（`resolve-paths-from-cwd` 之後）`.env` 預期放在「掃描根目錄」。現已**改回 pull-all repo 根目錄**，與 `.env.example` 位置一致。從 pull-all repo 內執行：
+### 從 `pull-all` 改名為 `sync-git`
+
+本工具原名 `pull-all`、環境變數原為 `PULL_ALL`，已更名為 `sync-git` / `SYNC_REPOS`。若你是舊版使用者，請手動補完以下兩項（程式與文件已自動更新）：
+
+1. **資料夾改名**：把本機 repo 資料夾 `pull-all` 改名為 `sync-git`（先 `cd` 離開該目錄再改）。掃描邏輯用 `path.dirname(__dirname)`，與資料夾名無關，但改名後文件與範例路徑才一致。
+
+   ```bash
+   cd ~/code
+   mv pull-all sync-git
+   ```
+
+2. **更新 `.env`**：把你本機 `.env` 裡的 `PULL_ALL=` 改成 `SYNC_REPOS=`，否則讀不到清單、會跳 `init` 引導。
+
+   ```env
+   # 舊
+   PULL_ALL=web,common,note
+   # 新
+   SYNC_REPOS=web,common,note
+   ```
+
+> GitHub 上若有對應 remote repo，也可一併改名（GitHub 會自動轉址，不急）。
+
+### `.env` 位置（歷史變更）
+
+中間有段時間（`resolve-paths-from-cwd` 之後）`.env` 預期放在「掃描根目錄」。現已**改回 sync-git repo 根目錄**，與 `.env.example` 位置一致。從 sync-git repo 內執行：
 
 ```bash
 mv ../.env .env

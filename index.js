@@ -352,10 +352,10 @@ async function main() {
   const parentDir = resolveRoot();
   console.log(`${GRAY}root: ${parentDir}${RESET}`);
 
-  const include = parseInclude(env('PULL_ALL'));
+  const include = parseInclude(env('SYNC_REPOS'));
   if (include.length === 0) {
     console.log(`${YELLOW}⚠ 尚未設定要追蹤的 repo。${RESET}`);
-    console.log(`  請執行 ${BOLD}pull-all init${RESET} 勾選，或在 .env 設定 PULL_ALL=repo1,repo2`);
+    console.log(`  請執行 ${BOLD}sync-git init${RESET} 勾選，或在 .env 設定 SYNC_REPOS=repo1,repo2`);
     return;
   }
 
@@ -460,7 +460,7 @@ async function runInit() {
   }
 
   const envPath = path.join(__dirname, '.env');
-  const preselected = parseInclude(env('PULL_ALL')).filter(name => repos.includes(name));
+  const preselected = parseInclude(env('SYNC_REPOS')).filter(name => repos.includes(name));
 
   const chosen = await checkbox(repos, preselected);
 
@@ -469,9 +469,9 @@ async function runInit() {
     return;
   }
 
-  updateEnvFile(envPath, 'PULL_ALL', chosen.join(','));
+  updateEnvFile(envPath, 'SYNC_REPOS', chosen.join(','));
   console.log(`${GREEN}✓ 已寫入 ${envPath}${RESET}`);
-  console.log(`  PULL_ALL=${chosen.join(', ')}`);
+  console.log(`  SYNC_REPOS=${chosen.join(', ')}`);
 }
 
 async function runClone() {
@@ -486,9 +486,9 @@ async function runClone() {
   }
   const owner = ownerOut;
 
-  const include = parseInclude(env('PULL_ALL'));
+  const include = parseInclude(env('SYNC_REPOS'));
   if (include.length === 0) {
-    console.log(`${YELLOW}尚未設定要追蹤的 repo，請先執行 pull-all init 勾選。${RESET}`);
+    console.log(`${YELLOW}尚未設定要追蹤的 repo，請先執行 sync-git init 勾選。${RESET}`);
     return;
   }
 
@@ -546,13 +546,13 @@ async function runClone() {
 }
 
 function printHelp(write = console.log) {
-  write(`Usage: pull-all [command]
+  write(`Usage: sync-git [command]
 
 Commands:
-  pull-all          檢查兄弟層 git repo，必要時詢問是否 pull
-  pull-all init     互動式勾選 repo，寫入 .env
-  pull-all clone    clone .env 列了但本機沒有的 repo
-  pull-all help     顯示此說明
+  sync-git          檢查兄弟層 git repo，必要時詢問是否 pull
+  sync-git init     互動式勾選 repo，寫入 .env
+  sync-git clone    clone .env 列了但本機沒有的 repo
+  sync-git help     顯示此說明
 
 Options:
   -h, --help        顯示此說明`);

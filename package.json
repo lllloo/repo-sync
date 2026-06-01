@@ -1,10 +1,10 @@
 {
-  "name": "pull-all",
+  "name": "sync-git",
   "version": "1.0.0",
-  "description": "對兄弟層所有 git repo 執行 git pull",
+  "description": "同步兄弟層所有 git repo：fetch、檢視落後、確認後 pull",
   "main": "index.js",
   "bin": {
-    "pull-all": "./index.js"
+    "sync-git": "./index.js"
   },
   "scripts": {
     "start": "node index.js",

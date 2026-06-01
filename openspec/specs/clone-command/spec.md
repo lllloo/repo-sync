@@ -1,21 +1,21 @@
 # clone-command Spec
 
 ## Purpose
-提供 `pull-all clone` 子命令，把 `.env` 的 `PULL_ALL` 列了但本機不存在的 repo，透過 `gh` CLI 自動 clone 下來，補完整個工作區同步閉環。URL 解析與認證交由 `gh` 處理，本機只維護單一 GitHub `owner` 設定。
+提供 `sync-git clone` 子命令，把 `.env` 的 `SYNC_REPOS` 列了但本機不存在的 repo，透過 `gh` CLI 自動 clone 下來，補完整個工作區同步閉環。URL 解析與認證交由 `gh` 處理，本機只維護單一 GitHub `owner` 設定。
 ## Requirements
 ### Requirement: clone subcommand 路由
-執行 `pull-all clone` 時，系統 SHALL 進入 clone 流程而非主要 pull 流程或 init 流程。
+執行 `sync-git clone` 時，系統 SHALL 進入 clone 流程而非主要 pull 流程或 init 流程。
 
 #### Scenario: 正確路由
-- **WHEN** 使用者執行 `pull-all clone`
+- **WHEN** 使用者執行 `sync-git clone`
 - **THEN** 系統執行 `runClone()`，不執行 `main()` 或 `runInit()`
 
-#### Scenario: 主 pull-all 行為不受影響
-- **WHEN** 使用者執行 `pull-all`（未帶子命令）
+#### Scenario: 主 sync-git 行為不受影響
+- **WHEN** 使用者執行 `sync-git`（未帶子命令）
 - **THEN** 系統依既有 `main()` 流程執行，與 `clone` 子命令存在與否無關
 
 ### Requirement: 從 gh CLI 自動取得 owner
-系統 SHALL 執行 `gh api user --jq .login` 取得當前已登入的 GitHub 帳號作為 owner，不再讀取 `PULL_ALL_OWNER` 環境變數或 `.env`。此單一指令同時作為 gh CLI 的前置守門：指令失敗（gh 未安裝或未登入）時 MUST 印出指引並以非 0 exit code 結束，不嘗試任何 clone。
+系統 SHALL 執行 `gh api user --jq .login` 取得當前已登入的 GitHub 帳號作為 owner，不再讀取 `SYNC_REPOS_OWNER` 環境變數或 `.env`。此單一指令同時作為 gh CLI 的前置守門：指令失敗（gh 未安裝或未登入）時 MUST 印出指引並以非 0 exit code 結束，不嘗試任何 clone。
 
 #### Scenario: gh 已登入
 - **WHEN** `gh api user --jq .login` 成功回傳帳號名稱
@@ -25,23 +25,23 @@
 - **WHEN** `gh api user --jq .login` 回傳非 0 exit code（指令不存在或未登入）
 - **THEN** 印出錯誤訊息提示確認 gh 已安裝並執行 `gh auth login`，以非 0 exit code 結束，不嘗試任何 clone
 
-### Requirement: 解析 PULL_ALL 取得 repo 清單
-系統 SHALL 讀取 `PULL_ALL` 取得逗號分隔的 repo 名字清單。名字含 `/` SHALL 視為合法的 `parent/child` 巢狀格式（行為見 `nested-repo-clone`），不視為錯誤。
+### Requirement: 解析 SYNC_REPOS 取得 repo 清單
+系統 SHALL 讀取 `SYNC_REPOS` 取得逗號分隔的 repo 名字清單。名字含 `/` SHALL 視為合法的 `parent/child` 巢狀格式（行為見 `nested-repo-clone`），不視為錯誤。
 
 #### Scenario: 名字清單合法
-- **WHEN** `PULL_ALL=web,common,note`
+- **WHEN** `SYNC_REPOS=web,common,note`
 - **THEN** 系統取得 `["web", "common", "note"]` 作為候選清單
 
 #### Scenario: 名字含 /（巢狀格式）
-- **WHEN** `PULL_ALL` 任一項含 `/`（如 `obsidian/obsidian-deploy`）
+- **WHEN** `SYNC_REPOS` 任一項含 `/`（如 `obsidian/obsidian-deploy`）
 - **THEN** 系統接受該項，交由 `nested-repo-clone` 的 parent/child 邏輯處理，不報錯
 
 #### Scenario: 清單為空
-- **WHEN** `PULL_ALL` 未設定或解析後為空
-- **THEN** 印出引導訊息建議執行 `pull-all init`，並以 exit code 0 結束
+- **WHEN** `SYNC_REPOS` 未設定或解析後為空
+- **THEN** 印出引導訊息建議執行 `sync-git init`，並以 exit code 0 結束
 
 ### Requirement: 計算缺漏 repo 清單
-系統 SHALL 將 `PULL_ALL` 名字清單與掃描根目錄下實際存在的子資料夾比對，僅對「本機不存在」或「存在但非 git repo」的項目進入後續處理。
+系統 SHALL 將 `SYNC_REPOS` 名字清單與掃描根目錄下實際存在的子資料夾比對，僅對「本機不存在」或「存在但非 git repo」的項目進入後續處理。
 
 #### Scenario: 本機完全不存在
 - **WHEN** 名字 `web` 對應的 `<root>/web` 目錄不存在
@@ -90,8 +90,8 @@
 - **THEN** 顯示黃色警告 `⚠ <name> 已存在但不是 git repo，跳過`
 
 ### Requirement: 掃描根目錄固定化
-系統 SHALL 以 `path.dirname(__dirname)` 作為固定掃描根目錄，用於比對本機 repo 與作為 `gh repo clone` 工作目錄。`PULL_ALL_ROOT` 環境變數 SHALL NOT 再被讀取。
+系統 SHALL 以 `path.dirname(__dirname)` 作為固定掃描根目錄，用於比對本機 repo 與作為 `gh repo clone` 工作目錄。`SYNC_REPOS_ROOT` 環境變數 SHALL NOT 再被讀取。
 
 #### Scenario: clone 工作目錄固定
-- **WHEN** 使用者在任意目錄執行 `pull-all clone`
-- **THEN** 系統將 clone 工作目錄固定設為 `path.dirname(__dirname)`，即 pull-all repo 的父目錄
+- **WHEN** 使用者在任意目錄執行 `sync-git clone`
+- **THEN** 系統將 clone 工作目錄固定設為 `path.dirname(__dirname)`，即 sync-git repo 的父目錄

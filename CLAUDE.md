@@ -14,7 +14,7 @@ npm run init           # 同上
 node index.js clone    # clone .env 列了但本機沒有的 repo（需要 gh CLI + gh auth login）
 node index.js help     # 顯示說明
 
-npm link               # 安裝全域 pull-all 指令
+npm link               # 安裝全域 sync-git 指令
 ```
 
 無 build 步驟、無測試套件、無 npm 相依套件。`clone` 子命令額外需要 [gh CLI](https://cli.github.com/)。
@@ -23,12 +23,12 @@ npm link               # 安裝全域 pull-all 指令
 
 **單一入口**：所有邏輯都在 `index.js`，無額外模組。純 Node.js stdlib + `child_process.exec`（包裝為 `sh()`）。
 
-**根目錄固定**：`resolveRoot()` 永遠回傳 `path.dirname(__dirname)`（pull-all repo 的父目錄），不受 cwd 影響。`.env` 位置同樣固定於 `__dirname`。
+**根目錄固定**：`resolveRoot()` 永遠回傳 `path.dirname(__dirname)`（sync-git repo 的父目錄），不受 cwd 影響。`.env` 位置同樣固定於 `__dirname`。
 
 **主流程（`main()`）**：
 
 1. `resolveRoot()` 取得掃描根目錄
-2. 套用 `PULL_ALL` 白名單篩選目標 repo
+2. 套用 `SYNC_REPOS` 白名單篩選目標 repo
 3. `Promise.all` 並行對每個 repo 執行 `checkRepo()`：fetch → 並行取 `git status --porcelain=v2 --branch` + default branch → 計算 ahead/behind → 偵測 dirty
 4. `renderRepo()` 輸出狀態（顯示 default branch 與 current branch 兩條，相同時合併）
 5. 篩出 pull 候選（current branch：有 upstream + behind > 0 + clean）
@@ -41,7 +41,7 @@ npm link               # 安裝全域 pull-all 指令
 
 | 變數 | 作用 |
 |---|---|
-| `PULL_ALL` | 要追蹤的 repo 名稱，逗號分隔；支援 `parent/child` 格式（巢狀 repo）；未設定則停下並引導執行 `pull-all init` |
+| `SYNC_REPOS` | 要追蹤的 repo 名稱，逗號分隔；支援 `parent/child` 格式（巢狀 repo）；未設定則停下並引導執行 `sync-git init` |
 
 ## OpenSpec 變更管理
 

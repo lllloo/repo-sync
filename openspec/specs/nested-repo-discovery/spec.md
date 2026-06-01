@@ -1,7 +1,7 @@
 # nested-repo-discovery Specification
 
 ## Purpose
-定義 `runInit()` 掃描巢狀 git repo 的邏輯，包含 parent/child 格式的選單顯示、縮排規則、以及 `PULL_ALL` 寫入格式，讓使用者能在 init 選單中看到並選取巢狀的 repo。
+定義 `runInit()` 掃描巢狀 git repo 的邏輯，包含 parent/child 格式的選單顯示、縮排規則、以及 `SYNC_REPOS` 寫入格式，讓使用者能在 init 選單中看到並選取巢狀的 repo。
 
 ## Requirements
 ### Requirement: init 掃描一層巢狀 git repo
@@ -22,16 +22,16 @@
 - **WHEN** 選單同時包含 `obsidian` 和 `obsidian/obsidian-deploy`
 - **THEN** `obsidian/obsidian-deploy` 顯示時前綴兩個空格，`obsidian` 無縮排
 
-### Requirement: 寫入 PULL_ALL 格式一致
-選取後寫入 `.env` 的 `PULL_ALL` 值，`parent/child` 項目以完整字串儲存（含 `/`）。
+### Requirement: 寫入 SYNC_REPOS 格式一致
+選取後寫入 `.env` 的 `SYNC_REPOS` 值，`parent/child` 項目以完整字串儲存（含 `/`）。
 
 #### Scenario: 寫入含 / 的名稱
 - **WHEN** 使用者在 init 中勾選 `obsidian/obsidian-deploy`
-- **THEN** `.env` 的 `PULL_ALL` 包含 `obsidian/obsidian-deploy`（含斜線）
+- **THEN** `.env` 的 `SYNC_REPOS` 包含 `obsidian/obsidian-deploy`（含斜線）
 
-### Requirement: preselected 與現有 PULL_ALL 相容
-init 啟動時，若 `PULL_ALL` 已含 `parent/child` 字串，SHALL自動預選對應項目。
+### Requirement: preselected 與現有 SYNC_REPOS 相容
+init 啟動時，若 `SYNC_REPOS` 已含 `parent/child` 字串，SHALL自動預選對應項目。
 
 #### Scenario: 預選巢狀 repo
-- **WHEN** 現有 `PULL_ALL=obsidian/obsidian-deploy,pull-all`
-- **THEN** init 選單中 `obsidian/obsidian-deploy` 與 `pull-all` 預設為已選取
+- **WHEN** 現有 `SYNC_REPOS=obsidian/obsidian-deploy,sync-git`
+- **THEN** init 選單中 `obsidian/obsidian-deploy` 與 `sync-git` 預設為已選取
