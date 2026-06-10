@@ -33,5 +33,5 @@
 init 啟動時，若 `SYNC_REPOS` 已含 `parent/child` 字串，SHALL自動預選對應項目。
 
 #### Scenario: 預選巢狀 repo
-- **WHEN** 現有 `SYNC_REPOS=obsidian/obsidian-deploy,sync-git`
-- **THEN** init 選單中 `obsidian/obsidian-deploy` 與 `sync-git` 預設為已選取
+- **WHEN** 現有 `SYNC_REPOS=obsidian/obsidian-deploy,repo-sync`
+- **THEN** init 選單中 `obsidian/obsidian-deploy` 與 `repo-sync` 預設為已選取

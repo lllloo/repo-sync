@@ -1,7 +1,7 @@
 # cli-output Specification
 
 ## Purpose
-定義 sync-git CLI 的終端輸出格式規範，包含 help 文字、錯誤訊息、及寫入失敗的處理方式，確保使用者在各種情境下取得清楚的回饋。
+定義 repo-sync CLI 的終端輸出格式規範，包含 help 文字、錯誤訊息、及寫入失敗的處理方式，確保使用者在各種情境下取得清楚的回饋。
 ## Requirements
 ### Requirement: fetch-error-message
 

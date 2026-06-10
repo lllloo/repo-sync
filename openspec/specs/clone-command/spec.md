@@ -1,17 +1,17 @@
 # clone-command Spec
 
 ## Purpose
-提供 `sync-git clone` 子命令，把 `.env` 的 `SYNC_REPOS` 列了但本機不存在的 repo，透過 `gh` CLI 自動 clone 下來，補完整個工作區同步閉環。URL 解析與認證交由 `gh` 處理，本機只維護單一 GitHub `owner` 設定。
+提供 `repo-sync clone` 子命令，把 `.env` 的 `SYNC_REPOS` 列了但本機不存在的 repo，透過 `gh` CLI 自動 clone 下來，補完整個工作區同步閉環。URL 解析與認證交由 `gh` 處理，本機只維護單一 GitHub `owner` 設定。
 ## Requirements
 ### Requirement: clone subcommand 路由
-執行 `sync-git clone` 時，系統 SHALL 進入 clone 流程而非主要 pull 流程或 init 流程。
+執行 `repo-sync clone` 時，系統 SHALL 進入 clone 流程而非主要 pull 流程或 init 流程。
 
 #### Scenario: 正確路由
-- **WHEN** 使用者執行 `sync-git clone`
+- **WHEN** 使用者執行 `repo-sync clone`
 - **THEN** 系統執行 `runClone()`，不執行 `main()` 或 `runInit()`
 
-#### Scenario: 主 sync-git 行為不受影響
-- **WHEN** 使用者執行 `sync-git`（未帶子命令）
+#### Scenario: 主 repo-sync 行為不受影響
+- **WHEN** 使用者執行 `repo-sync`（未帶子命令）
 - **THEN** 系統依既有 `main()` 流程執行，與 `clone` 子命令存在與否無關
 
 ### Requirement: 從 gh CLI 自動取得 owner
@@ -38,7 +38,7 @@
 
 #### Scenario: 清單為空
 - **WHEN** `SYNC_REPOS` 未設定或解析後為空
-- **THEN** 印出引導訊息建議執行 `sync-git init`，並以 exit code 0 結束
+- **THEN** 印出引導訊息建議執行 `repo-sync init`，並以 exit code 0 結束
 
 ### Requirement: 計算缺漏 repo 清單
 系統 SHALL 將 `SYNC_REPOS` 名字清單與掃描根目錄下實際存在的子資料夾比對，僅對「本機不存在」或「存在但非 git repo」的項目進入後續處理。
@@ -93,6 +93,6 @@
 系統 SHALL 以 `path.dirname(__dirname)` 作為固定掃描根目錄，用於比對本機 repo 與作為 `gh repo clone` 工作目錄。`PULL_ALL_ROOT` 環境變數 SHALL NOT 再被讀取。
 
 #### Scenario: clone 工作目錄固定
-- **WHEN** 使用者在任意目錄執行 `sync-git clone`
-- **THEN** 系統將 clone 工作目錄固定設為 `path.dirname(__dirname)`，即 sync-git repo 的父目錄
+- **WHEN** 使用者在任意目錄執行 `repo-sync clone`
+- **THEN** 系統將 clone 工作目錄固定設為 `path.dirname(__dirname)`，即 repo-sync repo 的父目錄
 

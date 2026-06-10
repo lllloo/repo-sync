@@ -1,15 +1,15 @@
 # init-command Spec
 
 ## Purpose
-提供 `sync-git init` 互動式 checkbox 介面，讓使用者勾選要同步的 repo，並將結果寫入 `.env` 的 `SYNC_REPOS`。
+提供 `repo-sync init` 互動式 checkbox 介面，讓使用者勾選要同步的 repo，並將結果寫入 `.env` 的 `SYNC_REPOS`。
 
 ## Requirements
 
 ### Requirement: init subcommand 路由
-執行 `sync-git init` 時，系統 SHALL 進入初始化流程而非主要 pull 流程。
+執行 `repo-sync init` 時，系統 SHALL 進入初始化流程而非主要 pull 流程。
 
 #### Scenario: 正確路由
-- **WHEN** 使用者執行 `sync-git init`
+- **WHEN** 使用者執行 `repo-sync init`
 - **THEN** 系統執行 `runInit()`，不執行 `main()`
 
 ---

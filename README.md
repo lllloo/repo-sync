@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="./assets/readme-header.png" alt="sync-git - sync sibling git repos">
+  <img src="./assets/readme-header.png" alt="repo-sync - sync sibling git repos">
 </p>
 
-# sync-git
+# repo-sync
 
-`sync-git` 是一個零相依的 Node.js CLI，用來檢查同一層目錄下的多個 git repo，並只對落後遠端的 repo 執行 `git pull`。
+`repo-sync` 是一個零相依的 Node.js CLI，用來檢查同一層目錄下的多個 git repo，並只對落後遠端的 repo 執行 `git pull`。
 
 ## 為什麼做這個
 
-使用 Codex 時常會同時維護多個專案，每次都要逐一進到各個 repo 執行 `git pull` 很麻煩。`sync-git` 讓你在一個地方檢查同層專案的更新狀態，先確認哪些 repo 落後遠端，再決定是否一次更新。
+使用 Codex 時常會同時維護多個專案，每次都要逐一進到各個 repo 執行 `git pull` 很麻煩。`repo-sync` 讓你在一個地方檢查同層專案的更新狀態，先確認哪些 repo 落後遠端，再決定是否一次更新。
 
 ## 特色
 
@@ -26,7 +26,7 @@
 
 ```text
 ~/code/
-  sync-git/
+  repo-sync/
   web/
   common/
   note/
@@ -41,22 +41,22 @@ git --version
 
 ## 使用方式
 
-`sync-git` 的掃描根目錄固定為 **sync-git repo 的父目錄**（`path.dirname(__dirname)`），不受當前工作目錄影響——從哪裡執行都掃同一坨兄弟 repo：
+`repo-sync` 的掃描根目錄固定為 **repo-sync repo 的父目錄**（`path.dirname(__dirname)`），不受當前工作目錄影響——從哪裡執行都掃同一坨兄弟 repo：
 
 ```bash
-node ~/code/sync-git/index.js   # 從任何位置執行，都掃 ~/code/ 底下的兄弟 repo
-npm start                        # 在 sync-git/ 目錄內等效
+node ~/code/repo-sync/index.js   # 從任何位置執行，都掃 ~/code/ 底下的兄弟 repo
+npm start                        # 在 repo-sync/ 目錄內等效
 ```
 
 執行時頂部會印出實際解析的 root 路徑，方便確認沒走錯地方。
 
 ## 設定
 
-`.env` 寫在 **sync-git repo 根目錄**（與 `.env.example` 同位置），與「掃描根目錄」解耦。不論在哪個 cwd 呼叫，工具都從同一處讀寫 `.env`。
+`.env` 寫在 **repo-sync repo 根目錄**（與 `.env.example` 同位置），與「掃描根目錄」解耦。不論在哪個 cwd 呼叫，工具都從同一處讀寫 `.env`。
 
 ### 快速初始化（建議）
 
-執行 `init` 指令，互動式勾選要追蹤的 repo，自動寫入 sync-git repo 根目錄下的 `.env`：
+執行 `init` 指令，互動式勾選要追蹤的 repo，自動寫入 repo-sync repo 根目錄下的 `.env`：
 
 ```bash
 node index.js init
@@ -91,13 +91,13 @@ SYNC_REPOS=web,common,obsidian,obsidian/obsidian-deploy,obsidian/obsidian-memory
 | 設定 | 行為 |
 | --- | --- |
 | 有 `SYNC_REPOS` | 只檢查清單內的 repo |
-| 無 `.env` 或 `SYNC_REPOS` 未設定 | 停下並提示執行 `sync-git init` 勾選，不檢查任何 repo |
-| 清單內 repo 不存在 | 顯示警告，其他 repo 照常執行（用 `sync-git clone` 補回） |
+| 無 `.env` 或 `SYNC_REPOS` 未設定 | 停下並提示執行 `repo-sync init` 勾選，不檢查任何 repo |
+| 清單內 repo 不存在 | 顯示警告，其他 repo 照常執行（用 `repo-sync clone` 補回） |
 | 清單內目錄不是 git repo | 跳過該目錄 |
 
 ## 執行流程
 
-1. 掃描根目錄（sync-git repo 父目錄）下的 repo，套用 `SYNC_REPOS` 白名單。
+1. 掃描根目錄（repo-sync repo 父目錄）下的 repo，套用 `SYNC_REPOS` 白名單。
 2. 對每個 repo：偵測是否為空 repo（無 commit）→ 並行 `git fetch` → 偵測 default branch（`origin/HEAD` → `main` → `master`）→ 計算 default 與 current 兩條 branch 的 ahead / behind → 偵測 working tree dirty。
 3. 列出狀態摘要（緊湊符號，見下方圖例）。
 4. 只對「current branch 有 upstream + ⇣ > 0 + working tree clean」的 repo 詢問是否 `git pull`。
@@ -146,9 +146,9 @@ root: /Users/barney/code
 - 兩條 branch 都沒事（`✓`、無 dirty、有 upstream）時，只列 default 一條當代表，抑制雜訊。
 - dirty 永遠標在 current branch 那一行（即使 current 本身是 `✓`）。
 
-## 補回缺漏 repo（`sync-git clone`）
+## 補回缺漏 repo（`repo-sync clone`）
 
-`.env` 列了但本機沒有的 repo，可用 `sync-git clone` 自動補回。URL 解析、認證、protocol 全部交給 `gh` CLI 處理。
+`.env` 列了但本機沒有的 repo，可用 `repo-sync clone` 自動補回。URL 解析、認證、protocol 全部交給 `gh` CLI 處理。
 
 前置條件：
 
@@ -158,7 +158,7 @@ root: /Users/barney/code
 ```bash
 node index.js clone
 # 或
-sync-git clone
+repo-sync clone
 ```
 
 流程：
@@ -171,7 +171,7 @@ sync-git clone
 限制：
 
 - 只支援 GitHub。GitLab、Bitbucket、自架 Gitea 不在範圍。
-- 主 `sync-git` 與 `sync-git init` 不受影響，不需要 `gh`。
+- 主 `repo-sync` 與 `repo-sync init` 不受影響，不需要 `gh`。
 
 ## 常用指令
 
@@ -196,15 +196,28 @@ SYNC_REPOS=web,common node index.js
 
 ## 遷移指引
 
+### 從 `sync-git` 改名為 `repo-sync`
+
+工具名與 `sync-ai` 共用 `sync-` 前綴難以辨識，已更名為 `repo-sync`。**環境變數 `SYNC_REPOS` 不變**，現有 `.env` 無須改動。若你是舊版使用者，補完以下一項即可（程式與文件已自動更新）：
+
+- **資料夾改名**：把本機 repo 資料夾 `sync-git` 改名為 `repo-sync`（先 `cd` 離開該目錄再改）。掃描邏輯用 `path.dirname(__dirname)`，與資料夾名無關，但改名後文件與範例路徑才一致。
+
+  ```bash
+  cd ~/code
+  mv sync-git repo-sync
+  ```
+
+> 若有 `npm link` 過，改名後在 `repo-sync/` 重跑一次 `npm link` 即可更新全域 `repo-sync` 指令（舊的 `sync-git` 全域指令可 `npm unlink` 移除）。
+
 ### 從 `pull-all` 改名為 `sync-git`
 
-本工具原名 `pull-all`、環境變數原為 `PULL_ALL`，已更名為 `sync-git` / `SYNC_REPOS`。若你是舊版使用者，請手動補完以下兩項（程式與文件已自動更新）：
+本工具最初名為 `pull-all`、環境變數原為 `PULL_ALL`，曾更名為 `sync-git` / `SYNC_REPOS`（後再更名為 `repo-sync`，見上節）。若你是 `pull-all` 時代的舊版使用者，請手動補完以下兩項：
 
-1. **資料夾改名**：把本機 repo 資料夾 `pull-all` 改名為 `sync-git`（先 `cd` 離開該目錄再改）。掃描邏輯用 `path.dirname(__dirname)`，與資料夾名無關，但改名後文件與範例路徑才一致。
+1. **資料夾改名**：把本機 repo 資料夾 `pull-all` 改名為 `repo-sync`（先 `cd` 離開該目錄再改）。掃描邏輯用 `path.dirname(__dirname)`，與資料夾名無關，但改名後文件與範例路徑才一致。
 
    ```bash
    cd ~/code
-   mv pull-all sync-git
+   mv pull-all repo-sync
    ```
 
 2. **更新 `.env`**：把你本機 `.env` 裡的 `PULL_ALL=` 改成 `SYNC_REPOS=`，否則讀不到清單、會跳 `init` 引導。
@@ -220,7 +233,7 @@ SYNC_REPOS=web,common node index.js
 
 ### `.env` 位置（歷史變更）
 
-中間有段時間（`resolve-paths-from-cwd` 之後）`.env` 預期放在「掃描根目錄」。現已**改回 sync-git repo 根目錄**，與 `.env.example` 位置一致。從 sync-git repo 內執行：
+中間有段時間（`resolve-paths-from-cwd` 之後）`.env` 預期放在「掃描根目錄」。現已**改回 repo-sync repo 根目錄**，與 `.env.example` 位置一致。從 repo-sync repo 內執行：
 
 ```bash
 mv ../.env .env

@@ -366,7 +366,7 @@ async function main() {
   const include = parseInclude(env('SYNC_REPOS'));
   if (include.length === 0) {
     console.log(`${YELLOW}⚠ 尚未設定要追蹤的 repo。${RESET}`);
-    console.log(`  請執行 ${BOLD}sync-git init${RESET} 勾選，或在 .env 設定 SYNC_REPOS=repo1,repo2`);
+    console.log(`  請執行 ${BOLD}repo-sync init${RESET} 勾選，或在 .env 設定 SYNC_REPOS=repo1,repo2`);
     return;
   }
 
@@ -499,7 +499,7 @@ async function runClone() {
 
   const include = parseInclude(env('SYNC_REPOS'));
   if (include.length === 0) {
-    console.log(`${YELLOW}尚未設定要追蹤的 repo，請先執行 sync-git init 勾選。${RESET}`);
+    console.log(`${YELLOW}尚未設定要追蹤的 repo，請先執行 repo-sync init 勾選。${RESET}`);
     return;
   }
 
@@ -557,13 +557,13 @@ async function runClone() {
 }
 
 function printHelp(write = console.log) {
-  write(`Usage: sync-git [command]
+  write(`Usage: repo-sync [command]
 
 Commands:
-  sync-git          檢查兄弟層 git repo，必要時詢問是否 pull
-  sync-git init     互動式勾選 repo，寫入 .env
-  sync-git clone    clone .env 列了但本機沒有的 repo
-  sync-git help     顯示此說明
+  repo-sync          檢查兄弟層 git repo，必要時詢問是否 pull
+  repo-sync init     互動式勾選 repo，寫入 .env
+  repo-sync clone    clone .env 列了但本機沒有的 repo
+  repo-sync help     顯示此說明
 
 Options:
   -h, --help        顯示此說明`);
