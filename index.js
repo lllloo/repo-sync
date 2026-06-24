@@ -385,13 +385,20 @@ function updateEnvFile(envPath, key, value) {
   }
 
   const keyPrefix = `${key}=`;
-  const idx = lines.findIndex(l => l.startsWith(keyPrefix));
+  // 與 loadEnv 對稱辨識 `KEY=` 與 `export KEY=` 兩種形式，避免改寫後殘留的 export 舊行
+  // 被 loadEnv「先到先得」讀回（審核 A）
+  const matchesKey = (l) => {
+    const t = l.trim();
+    const body = t.startsWith('export ') ? t.slice('export '.length).trimStart() : t;
+    return body.startsWith(keyPrefix);
+  };
+  const idx = lines.findIndex(matchesKey);
   const newLine = `${key}=${value}`;
 
   if (idx !== -1) {
     lines[idx] = newLine;
-    // 移除其餘同名行，避免 loadEnv「先到先得」讀到後方殘留的舊值（C-2）
-    lines = lines.filter((l, i) => i === idx || !l.startsWith(keyPrefix));
+    // 移除其餘同名行（含 export 形式），避免 loadEnv「先到先得」讀到後方殘留的舊值（C-2 / 審核 A）
+    lines = lines.filter((l, i) => i === idx || !matchesKey(l));
   } else {
     if (lines.length > 0 && lines[lines.length - 1] === '') {
       lines[lines.length - 1] = newLine;
@@ -535,6 +542,10 @@ async function runInit() {
   console.log(`  SYNC_REPOS=${chosen.join(', ')}`);
 }
 
+// GitHub repo 名（含 parent/child 巢狀分隔）白名單：每段僅允許英數與 . _ -，且不以 - 開頭。
+// 阻擋以 - 開頭的名稱被 gh/git 當成選項旗標（argument injection 防禦深度；shell 注入已由 execFile 消除）（審核 B）
+const isValidRepoName = (n) => /^[A-Za-z0-9_.][A-Za-z0-9._-]*(\/[A-Za-z0-9_.][A-Za-z0-9._-]*)*$/.test(n);
+
 async function runClone() {
   const rootDir = resolveRoot();
   console.log(`${GRAY}root: ${rootDir}${RESET}`);
@@ -555,7 +566,12 @@ async function runClone() {
 
   const toClone = [];
   const skipped = [];
+  const invalid = [];
   for (const name of include) {
+    if (!isValidRepoName(name)) {
+      invalid.push(name);
+      continue;
+    }
     const fullPath = path.join(rootDir, name);
     if (fs.existsSync(fullPath)) {
       if (!isGitRepo(fullPath)) skipped.push(name);
@@ -564,6 +580,9 @@ async function runClone() {
     toClone.push(name);
   }
 
+  for (const name of invalid) {
+    console.log(`${YELLOW}⚠ ${name} 含不合法字元，跳過（僅允許英數與 . _ - / 且各段不以 - 開頭）${RESET}`);
+  }
   for (const name of skipped) {
     console.log(`${YELLOW}⚠ ${name} 已存在但不是 git repo，跳過${RESET}`);
   }
