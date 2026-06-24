@@ -543,8 +543,15 @@ async function runInit() {
 }
 
 // GitHub repo 名（含 parent/child 巢狀分隔）白名單：每段僅允許英數與 . _ -，且不以 - 開頭。
-// 阻擋以 - 開頭的名稱被 gh/git 當成選項旗標（argument injection 防禦深度；shell 注入已由 execFile 消除）（審核 B）
-const isValidRepoName = (n) => /^[A-Za-z0-9_.][A-Za-z0-9._-]*(\/[A-Za-z0-9_.][A-Za-z0-9._-]*)*$/.test(n);
+// 阻擋以 - 開頭的名稱被 gh/git 當成選項旗標（argument injection 防禦深度；shell 注入已由 execFile 消除）（審核 B）。
+// 另逐段拒絕 `.` 與 `..`：原字元集允許 `.` 開頭，故 `../x` 這類段能通過字元檢查，
+// path.join 會解析成跳出 root 的目錄（path traversal 防禦深度）（審核 C）。
+const isValidRepoName = (n) => {
+  if (typeof n !== 'string' || n === '') return false;
+  return n.split('/').every(
+    (s) => s !== '.' && s !== '..' && /^[A-Za-z0-9_.][A-Za-z0-9._-]*$/.test(s)
+  );
+};
 
 async function runClone() {
   const rootDir = resolveRoot();
