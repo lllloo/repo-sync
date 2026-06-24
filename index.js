@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
@@ -13,9 +13,12 @@ const GRAY = '\x1b[90m';
 const BOLD = '\x1b[1m';
 const INVERT = '\x1b[7m';
 
-function sh(cmd, dir) {
+// 以參數陣列經 execFile 執行，繞過 shell 解析——repo/branch 名等可控字串放進
+// args 不會被 cmd.exe / sh 當元字元解析，徹底消除命令注入（C-5）。
+// maxBuffer 提高至 64MB，避免大量 fetch/pull/status 輸出被截斷誤判失敗（C-7）。
+function run(file, args, dir) {
   return new Promise((resolve) => {
-    exec(cmd, { cwd: dir }, (err, stdout, stderr) => {
+    execFile(file, args, { cwd: dir, maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
       resolve({ err, stdout: stdout.trim(), stderr: stderr.trim() });
     });
   });
@@ -90,16 +93,16 @@ function parseStatus(stdout) {
 }
 
 async function getDefaultBranch(dir) {
-  const { err, stdout } = await sh('git symbolic-ref --short refs/remotes/origin/HEAD', dir);
+  const { err, stdout } = await run('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], dir);
   if (!err && stdout) {
     const idx = stdout.indexOf('/');
     const name = idx === -1 ? stdout : stdout.slice(idx + 1);
-    const { err: noLocal } = await sh(`git rev-parse --verify --quiet refs/heads/${name}`, dir);
+    const { err: noLocal } = await run('git', ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`], dir);
     return { name, localExists: !noLocal };
   }
-  const { err: noMain } = await sh('git rev-parse --verify --quiet refs/heads/main', dir);
+  const { err: noMain } = await run('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/main'], dir);
   if (!noMain) return { name: 'main', localExists: true };
-  const { err: noMaster } = await sh('git rev-parse --verify --quiet refs/heads/master', dir);
+  const { err: noMaster } = await run('git', ['rev-parse', '--verify', '--quiet', 'refs/heads/master'], dir);
   if (!noMaster) return { name: 'master', localExists: true };
   return null;
 }
@@ -107,15 +110,15 @@ async function getDefaultBranch(dir) {
 async function getBranchStatus(dir, branch, localExists = true) {
   // 三條 return 一律帶齊 { ahead, behind, hasUpstream, localMissing }，呼叫端不靠 undefined 隱性語意（Q-3）
   if (!localExists) return { ahead: 0, behind: 0, hasUpstream: false, localMissing: true };
-  const upstreamRes = await sh(`git rev-parse --verify --quiet ${branch}@{u}`, dir);
+  const upstreamRes = await run('git', ['rev-parse', '--verify', '--quiet', `${branch}@{u}`], dir);
   const hasUpstream = !upstreamRes.err;
   if (!hasUpstream) {
-    const { stdout } = await sh(`git rev-list ${branch} --not --remotes --count`, dir);
+    const { stdout } = await run('git', ['rev-list', branch, '--not', '--remotes', '--count'], dir);
     return { ahead: parseInt(stdout, 10) || 0, behind: 0, hasUpstream, localMissing: false };
   }
   const [aheadRes, behindRes] = await Promise.all([
-    sh(`git rev-list ${branch}@{u}..${branch} --count`, dir),
-    sh(`git rev-list ${branch}..${branch}@{u} --count`, dir),
+    run('git', ['rev-list', `${branch}@{u}..${branch}`, '--count'], dir),
+    run('git', ['rev-list', `${branch}..${branch}@{u}`, '--count'], dir),
   ]);
   const ahead = parseInt(aheadRes.stdout, 10) || 0;
   const behind = parseInt(behindRes.stdout, 10) || 0;
@@ -123,14 +126,14 @@ async function getBranchStatus(dir, branch, localExists = true) {
 }
 
 async function checkRepo({ name, fullPath }) {
-  const { err: emptyErr } = await sh('git rev-parse --verify --quiet HEAD', fullPath);
+  const { err: emptyErr } = await run('git', ['rev-parse', '--verify', '--quiet', 'HEAD'], fullPath);
   if (emptyErr) return { name, fullPath, type: 'empty' };
 
-  const { err: fetchErr, stderr } = await sh('git fetch', fullPath);
+  const { err: fetchErr, stderr } = await run('git', ['fetch'], fullPath);
   if (fetchErr) return { name, fullPath, type: 'fetch-failed', stderr };
 
   const [statusRes, defaultBranchInfo] = await Promise.all([
-    sh('git status --porcelain=v2 --branch', fullPath),
+    run('git', ['status', '--porcelain=v2', '--branch'], fullPath),
     getDefaultBranch(fullPath),
   ]);
 
@@ -138,12 +141,15 @@ async function checkRepo({ name, fullPath }) {
 
   const current = parseStatus(statusRes.stdout);
 
-  // current branch 非 detached 且無 upstream 時，porcelain 不輸出 branch.ab，
-  // ahead 會落 0。比照 getBranchStatus 對 default 無 upstream 分支的作法，
-  // 以 rev-list <current> --not --remotes 補算「不在任何 remote 的 commit 數」當 ahead（N-1）。
-  // 僅在此邊界呼叫；有 upstream 時 porcelain branch.ab 已給正確值，不重算。
-  if (!current.detached && !current.hasUpstream) {
-    const { stdout } = await sh(`git rev-list ${current.name} --not --remotes --count`, fullPath);
+  // current ahead 的單一權威來源：依 status-check spec line 144-145，非 detached 時
+  // 一律以 `git rev-list <current> --not --remotes --count`（不在任何 remote 的 commit 數）
+  // 覆寫 ahead。此語意同時涵蓋有/無 upstream，不需分支邏輯——既根治無 upstream 時
+  // porcelain 不輸出 branch.ab 而落 0（N-1），也根治 upstream config 殘留但 remote-tracking
+  // ref 已不存在（遠端 branch 被刪、本機未 prune）時 porcelain 印 branch.upstream 卻無
+  // branch.ab、ahead 落 0 而誤報同步（O-1）。behind 仍取自 porcelain branch.ab
+  // （--not --remotes 算不出 behind）。detached 時 current.name 為 null，短路不呼叫。
+  if (!current.detached) {
+    const { stdout } = await run('git', ['rev-list', current.name, '--not', '--remotes', '--count'], fullPath);
     current.ahead = parseInt(stdout, 10) || 0;
   }
 
@@ -174,7 +180,7 @@ async function checkRepo({ name, fullPath }) {
 }
 
 async function pull(fullPath) {
-  const { err, stdout, stderr } = await sh('git pull', fullPath);
+  const { err, stdout, stderr } = await run('git', ['pull'], fullPath);
   return { err, stdout, stderr };
 }
 
@@ -209,7 +215,11 @@ function checkbox(items, preselected = []) {
     }
 
     function redraw() {
-      process.stdout.write(`\x1b[${items.length - 1}A\r`);
+      // 上移「清單行數 - 1」回到首行；單項清單時為 0，\x1b[0A 會被視為上移 1 行
+      // 而蓋掉提示文字，故僅在 > 0 時送 CUU，否則只 \r 回行首重畫該行（Q-4）。
+      const up = items.length - 1;
+      if (up > 0) process.stdout.write(`\x1b[${up}A`);
+      process.stdout.write('\r');
       render();
     }
 
@@ -529,7 +539,7 @@ async function runClone() {
   const rootDir = resolveRoot();
   console.log(`${GRAY}root: ${rootDir}${RESET}`);
 
-  const { err: ownerErr, stdout: ownerOut, stderr: ownerStderr } = await sh('gh api user --jq .login');
+  const { err: ownerErr, stdout: ownerOut, stderr: ownerStderr } = await run('gh', ['api', 'user', '--jq', '.login']);
   if (ownerErr) {
     console.error(`${RED}無法取得 GitHub 帳號。請確認 gh CLI 已安裝並執行：gh auth login${RESET}`);
     if (ownerStderr) console.error(`${GRAY}${ownerStderr}${RESET}`);
@@ -579,7 +589,7 @@ async function runClone() {
           return { name, ok: false, stderr: `無法建立目錄 ${cloneDir}：${e.message}` };
         }
       }
-      const { err, stderr } = await sh(`gh repo clone ${owner}/${repoName}`, cloneDir);
+      const { err, stderr } = await run('gh', ['repo', 'clone', `${owner}/${repoName}`], cloneDir);
       return { name, ok: !err, stderr };
     })
   );
