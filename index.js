@@ -38,10 +38,25 @@ function loadEnv() {
     if (!trimmed || trimmed.startsWith('#')) continue;
     const eq = trimmed.indexOf('=');
     if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    if (key) _env[key] = trimmed.slice(eq + 1).trim();
+    // 容忍 `export KEY=` 前綴（C-4）
+    let key = trimmed.slice(0, eq).trim();
+    if (key.startsWith('export ')) key = key.slice('export '.length).trim();
+    // 重複 key 採「先到先得」，與 updateEnvFile 改寫第一筆的語意一致（C-2）
+    if (key && !(key in _env)) _env[key] = stripQuotes(trimmed.slice(eq + 1).trim());
   }
   return _env;
+}
+
+// 前後為成對的引號（同為 " 或同為 '）時剝除一層，避免誤剝單邊或值內引號（C-3）
+function stripQuotes(value) {
+  if (value.length >= 2) {
+    const first = value[0];
+    const last = value[value.length - 1];
+    if ((first === '"' || first === "'") && first === last) {
+      return value.slice(1, -1);
+    }
+  }
+  return value;
 }
 
 const env = (k) => process.env[k] || loadEnv()[k] || null;
@@ -90,12 +105,13 @@ async function getDefaultBranch(dir) {
 }
 
 async function getBranchStatus(dir, branch, localExists = true) {
+  // 三條 return 一律帶齊 { ahead, behind, hasUpstream, localMissing }，呼叫端不靠 undefined 隱性語意（Q-3）
   if (!localExists) return { ahead: 0, behind: 0, hasUpstream: false, localMissing: true };
   const upstreamRes = await sh(`git rev-parse --verify --quiet ${branch}@{u}`, dir);
   const hasUpstream = !upstreamRes.err;
   if (!hasUpstream) {
     const { stdout } = await sh(`git rev-list ${branch} --not --remotes --count`, dir);
-    return { ahead: parseInt(stdout, 10) || 0, behind: 0, hasUpstream };
+    return { ahead: parseInt(stdout, 10) || 0, behind: 0, hasUpstream, localMissing: false };
   }
   const [aheadRes, behindRes] = await Promise.all([
     sh(`git rev-list ${branch}@{u}..${branch} --count`, dir),
@@ -103,7 +119,7 @@ async function getBranchStatus(dir, branch, localExists = true) {
   ]);
   const ahead = parseInt(aheadRes.stdout, 10) || 0;
   const behind = parseInt(behindRes.stdout, 10) || 0;
-  return { ahead, behind, hasUpstream };
+  return { ahead, behind, hasUpstream, localMissing: false };
 }
 
 async function checkRepo({ name, fullPath }) {
@@ -121,6 +137,16 @@ async function checkRepo({ name, fullPath }) {
   if (statusRes.err) return { name, fullPath, type: 'fetch-failed', stderr: statusRes.stderr };
 
   const current = parseStatus(statusRes.stdout);
+
+  // current branch 非 detached 且無 upstream 時，porcelain 不輸出 branch.ab，
+  // ahead 會落 0。比照 getBranchStatus 對 default 無 upstream 分支的作法，
+  // 以 rev-list <current> --not --remotes 補算「不在任何 remote 的 commit 數」當 ahead（N-1）。
+  // 僅在此邊界呼叫；有 upstream 時 porcelain branch.ab 已給正確值，不重算。
+  if (!current.detached && !current.hasUpstream) {
+    const { stdout } = await sh(`git rev-list ${current.name} --not --remotes --count`, fullPath);
+    current.ahead = parseInt(stdout, 10) || 0;
+  }
+
   const defaultBranch = defaultBranchInfo ? defaultBranchInfo.name : null;
   const sameAsCurrent = !current.detached && defaultBranch === current.name;
 
@@ -243,6 +269,23 @@ function pickColor({ behind, dirty, ahead, hasUpstream }) {
   return GRAY;
 }
 
+// 一般 branch 行的共用渲染（current 與 default 三處共用）（Q-1）。
+// status 須帶 { ahead, behind, hasUpstream, localMissing? }；localMissing 走「本機無此分支」特例。
+function renderBranchLine({ col, status, dirty, name }) {
+  if (status.localMissing) {
+    return `${GRAY}  ${col}  (本機無此分支)  (${name})${RESET}`;
+  }
+  const { ahead, behind, hasUpstream } = status;
+  const seg = formatBranchSegment({ ahead, behind, dirty });
+  const color = pickColor({ behind, dirty, ahead, hasUpstream });
+  return `${color}  ${col}  ${seg}  ${branchLabel(name, hasUpstream)}${RESET}`;
+}
+
+// detached HEAD 行的共用渲染，兩條路徑統一縮排（branch 欄對齊 segment 欄）（Q-2）。
+function renderDetachedLine(col, sha, dirty) {
+  return `  ${col}  (HEAD@${sha}, detached)${dirty ? ' *' : ''}`;
+}
+
 function renderRepo(r, maxNameLen) {
   const pad = (s) => s.padEnd(maxNameLen);
   const blank = ' '.repeat(maxNameLen);
@@ -264,29 +307,31 @@ function renderRepo(r, maxNameLen) {
     defaultHasEvent = localMissing || ahead > 0 || behind > 0 || !hasUpstream;
   }
 
+  // detached 視為「永遠要顯示」的事件：detached 行承載 sha 與 dirty `*`，
+  // 不可在 default 存在路徑被吞掉（C-1）。
   let currentHasEvent = false;
-  if (!r.current.detached && r.currentStatus) {
+  if (r.current.detached) {
+    currentHasEvent = true;
+  } else if (r.currentStatus) {
     const { ahead, behind, hasUpstream } = r.currentStatus;
     currentHasEvent = ahead > 0 || behind > 0 || !hasUpstream || r.dirty;
   }
 
   if (r.sameAsCurrent) {
-    const { ahead, behind, hasUpstream } = r.currentStatus;
-    const seg = formatBranchSegment({ ahead, behind, dirty: r.dirty });
-    const color = pickColor({ behind, dirty: r.dirty, ahead, hasUpstream });
-    lines.push(`${color}  ${pad(r.name)}  ${seg}  ${branchLabel(r.current.name, hasUpstream)}${RESET}`);
+    lines.push(renderBranchLine({
+      col: pad(r.name), status: r.currentStatus, dirty: r.dirty, name: r.current.name,
+    }));
     return lines;
   }
 
   if (r.noDefault) {
     lines.push(`${YELLOW}⚠ ${pad(r.name)}  無預設分支${RESET}`);
     if (r.current.detached) {
-      lines.push(`  ${blank}  (HEAD@${r.current.sha}, detached)${r.dirty ? ' *' : ''}`);
+      lines.push(renderDetachedLine(blank, r.current.sha, r.dirty));
     } else if (r.currentStatus) {
-      const { ahead, behind, hasUpstream } = r.currentStatus;
-      const seg = formatBranchSegment({ ahead, behind, dirty: r.dirty });
-      const color = pickColor({ behind, dirty: r.dirty, ahead, hasUpstream });
-      lines.push(`${color}  ${blank}  ${seg}  ${branchLabel(r.current.name, hasUpstream)}${RESET}`);
+      lines.push(renderBranchLine({
+        col: blank, status: r.currentStatus, dirty: r.dirty, name: r.current.name,
+      }));
     }
     return lines;
   }
@@ -297,26 +342,19 @@ function renderRepo(r, maxNameLen) {
   const repoCol = () => (firstLine ? pad(r.name) : blank);
 
   if (showDefault && r.defaultStatus) {
-    if (r.defaultStatus.localMissing) {
-      lines.push(`${GRAY}  ${repoCol()}  (本機無此分支)  (${r.defaultBranch})${RESET}`);
-    } else {
-      const { ahead, behind, hasUpstream } = r.defaultStatus;
-      const seg = formatBranchSegment({ ahead, behind, dirty: false });
-      const color = pickColor({ behind, dirty: false, ahead, hasUpstream });
-      lines.push(`${color}  ${repoCol()}  ${seg}  ${branchLabel(r.defaultBranch, hasUpstream)}${RESET}`);
-    }
+    lines.push(renderBranchLine({
+      col: repoCol(), status: r.defaultStatus, dirty: false, name: r.defaultBranch,
+    }));
     firstLine = false;
   }
 
   if (showCurrent) {
     if (r.current.detached) {
-      const dirtyMark = r.dirty ? ' *' : '';
-      lines.push(`${GRAY}  ${repoCol()}     (HEAD@${r.current.sha}, detached)${dirtyMark}${RESET}`);
+      lines.push(renderDetachedLine(repoCol(), r.current.sha, r.dirty));
     } else if (r.currentStatus) {
-      const { ahead, behind, hasUpstream } = r.currentStatus;
-      const seg = formatBranchSegment({ ahead, behind, dirty: r.dirty });
-      const color = pickColor({ behind, dirty: r.dirty, ahead, hasUpstream });
-      lines.push(`${color}  ${repoCol()}  ${seg}  ${branchLabel(r.current.name, hasUpstream)}${RESET}`);
+      lines.push(renderBranchLine({
+        col: repoCol(), status: r.currentStatus, dirty: r.dirty, name: r.current.name,
+      }));
     }
     firstLine = false;
   }
@@ -342,6 +380,8 @@ function updateEnvFile(envPath, key, value) {
 
   if (idx !== -1) {
     lines[idx] = newLine;
+    // 移除其餘同名行，避免 loadEnv「先到先得」讀到後方殘留的舊值（C-2）
+    lines = lines.filter((l, i) => i === idx || !l.startsWith(keyPrefix));
   } else {
     if (lines.length > 0 && lines[lines.length - 1] === '') {
       lines[lines.length - 1] = newLine;
